@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -234,8 +235,6 @@
         let micSource;
         let outputGainNode;
         let isAudioRunning = false;
-        let lfoPhase = 0;
-        let lastLfoUpdate = 0;
         let currentLfoSize = 1000;
 
         // DOM elements
@@ -254,9 +253,6 @@
         const lfoIndicator = document.getElementById('lfoIndicator');
         const currentTapsDisplay = document.getElementById('currentTapsDisplay');
 
-        // LFO visualization
-        let lfoAnimationId = null;
-
         // Register AudioWorklet processor
         async function registerProcessor() {
             if (!audioContext) {
@@ -274,6 +270,7 @@
                         this.lastSize = 1000;
                         this.lfoPhase = 0;
                         this.lastTime = 0;
+                        this.lastMessageTime = 0;
                         this.gain = 0.15;
                         this.lfoEnabled = false;
                         this.lfoRate = 2.0;
@@ -281,12 +278,26 @@
                         this.polarityInversion = 'none';
                         this.port.onmessage = (e) => {
                             if (e.data.type === 'params') {
-                                this.currentSize = e.data.filterLength;
+                                const newSize = e.data.filterLength;
                                 this.gain = e.data.gain;
                                 this.lfoEnabled = e.data.lfoEnabled;
                                 this.lfoRate = e.data.lfoRate;
                                 this.inputSource = e.data.inputSource;
                                 this.polarityInversion = e.data.polarityInversion;
+
+                                // If LFO is disabled, use the slider value
+                                if (!this.lfoEnabled) {
+                                    this.currentSize = newSize;
+                                }
+                                // Force sum recalculation if size changed
+                                if (this.currentSize !== this.lastSize) {
+                                    this.sum = 0;
+                                    for (let i = 0; i < this.currentSize; i++) {
+                                        const idx = (this.bufferPos - i + 5000) % 5000;
+                                        this.sum += this.buffer[idx];
+                                    }
+                                    this.lastSize = this.currentSize;
+                                }
                             }
                         };
                     }
@@ -304,10 +315,7 @@
                             this.lastTime = now;
                             const lfoValue = 0.5 + 0.5 * Math.sin(2 * Math.PI * this.lfoPhase);
                             const modulatedSize = Math.floor(25 + lfoValue * (5000 - 25));
-                            if (modulatedSize !== this.lastSize) {
-                                this.currentSize = modulatedSize;
-                                this.lastSize = modulatedSize;
-                            }
+                            this.currentSize = modulatedSize;
                         }
 
                         // Recalculate sum if size changed
@@ -320,13 +328,14 @@
                             this.lastSize = this.currentSize;
                         }
 
-                        // Send current size to main thread for visualization
-                        if (this.lfoEnabled && now - this.lastTime < 0.1) {
+                        // Send current size to main thread for visualization (throttled)
+                        if (this.lfoEnabled && now - this.lastMessageTime >= 0.05) {
                             this.port.postMessage({
                                 type: 'currentSize',
                                 size: this.currentSize,
                                 phase: this.lfoPhase
                             });
+                            this.lastMessageTime = now;
                         }
 
                         for (let i = 0; i < output[0].length; i++) {
@@ -389,67 +398,10 @@
             URL.revokeObjectURL(url);
         }
 
-        // Initialize audio graph
-        async function initAudio() {
-            try {
-                await registerProcessor();
-
-                // Create nodes
-                auraConvNode = new AudioWorkletNode(audioContext, 'auraconv-processor');
-                outputGainNode = audioContext.createGain();
-                whiteNoiseNode = createWhiteNoiseNode();
-
-                // Connect nodes
-                whiteNoiseNode.connect(auraConvNode);
-                auraConvNode.connect(outputGainNode);
-                outputGainNode.connect(audioContext.destination);
-
-                // Set default gain
-                outputGainNode.gain.value = parseFloat(outputGainSlider.value);
-
-                // Listen for messages from AudioWorklet
-                auraConvNode.port.onmessage = (e) => {
-                    if (e.data.type === 'currentSize') {
-                        currentLfoSize = e.data.size;
-                        currentTapsDisplay.textContent = `Current Taps: ${currentLfoSize}`;
-                        updateLfoVisualizer(e.data.phase);
-                    }
-                };
-
-                // Update processor parameters
-                updateProcessorParams();
-
-                // Start white noise (always running, but muted if not selected)
-                whiteNoiseNode.start();
-
-                isAudioRunning = true;
-                updateUIState();
-                startLfoVisualization();
-            } catch (err) {
-                console.error("Error initializing audio:", err);
-                audioStatus.textContent = "Error: " + err.message;
-                audioStatus.className = "status inactive";
-            }
-        }
-
         // Update LFO visualizer
         function updateLfoVisualizer(phase) {
             const percent = phase * 100;
             lfoIndicator.style.left = `${percent}%`;
-        }
-
-        // Start LFO visualization animation
-        function startLfoVisualization() {
-            if (lfoAnimationId) {
-                cancelAnimationFrame(lfoAnimationId);
-            }
-            lfoAnimationId = requestAnimationFrame(animateLfoVisualizer);
-        }
-
-        function animateLfoVisualizer() {
-            if (isAudioRunning && lfoEnabledSelect.value === '1') {
-                lfoAnimationId = requestAnimationFrame(animateLfoVisualizer);
-            }
         }
 
         // Create white noise node
@@ -462,7 +414,6 @@
                     data[i] = Math.random() * 2 - 1;
                 }
             }
-
             const node = audioContext.createBufferSource();
             node.buffer = buffer;
             node.loop = true;
@@ -514,7 +465,51 @@
 
             // Update microphone based on input source
             const needsMic = inputSourceSelect.value === 'mic' || inputSourceSelect.value === 'both';
-            toggleMicrophone(needsMic && isAudioRunning);
+            if (isAudioRunning) {
+                toggleMicrophone(needsMic);
+            }
+        }
+
+        // Initialize audio graph
+        async function initAudio() {
+            try {
+                await registerProcessor();
+
+                // Create nodes
+                auraConvNode = new AudioWorkletNode(audioContext, 'auraconv-processor');
+                outputGainNode = audioContext.createGain();
+                whiteNoiseNode = createWhiteNoiseNode();
+
+                // Connect nodes
+                whiteNoiseNode.connect(auraConvNode);
+                auraConvNode.connect(outputGainNode);
+                outputGainNode.connect(audioContext.destination);
+
+                // Set default gain
+                outputGainNode.gain.value = parseFloat(outputGainSlider.value);
+
+                // Listen for messages from AudioWorklet
+                auraConvNode.port.onmessage = (e) => {
+                    if (e.data.type === 'currentSize') {
+                        currentLfoSize = e.data.size;
+                        currentTapsDisplay.textContent = `Current Taps: ${currentLfoSize}`;
+                        updateLfoVisualizer(e.data.phase);
+                    }
+                };
+
+                // Update processor parameters
+                updateProcessorParams();
+
+                // Start white noise (always running, but muted if not selected)
+                whiteNoiseNode.start();
+
+                isAudioRunning = true;
+                updateUIState();
+            } catch (err) {
+                console.error("Error initializing audio:", err);
+                audioStatus.textContent = "Error: " + err.message;
+                audioStatus.className = "status inactive";
+            }
         }
 
         // Event listeners
@@ -538,10 +533,6 @@
                 if (outputGainNode) {
                     outputGainNode.disconnect();
                     outputGainNode = null;
-                }
-                if (lfoAnimationId) {
-                    cancelAnimationFrame(lfoAnimationId);
-                    lfoAnimationId = null;
                 }
                 isAudioRunning = false;
                 updateUIState();
