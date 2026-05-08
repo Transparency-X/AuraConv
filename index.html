@@ -1,575 +1,1058 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AuraConv Filter (Moving Average Convolution)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0a0a0a">
+    <title>AuraConv - Convolution Filter</title>
     <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f0f0f0;
-            color: #333;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
         }
-        h1 {
-            color: #2c3e50;
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #fff;
+            overflow-x: hidden;
+            touch-action: manipulation;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        header {
             text-align: center;
             margin-bottom: 30px;
+            padding-top: 20px;
         }
-        .container {
-            background-color: white;
-            border-radius: 10px;
-            padding: 25px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 200;
+            letter-spacing: -0.05em;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
         }
-        .section {
-            margin-bottom: 20px;
-            padding: 15px;
-            border: 1px solid #eee;
-            border-radius: 8px;
-            background-color: #f9f9f9;
+
+        .subtitle {
+            color: #666;
+            font-size: 0.9rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
         }
-        .section h2 {
-            margin-top: 0;
-            color: #2c3e50;
-            font-size: 1.1em;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 8px;
-        }
-        .control-group {
-            margin-bottom: 15px;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 500;
-            color: #555;
-        }
-        input[type="range"] {
+
+        .visualizer {
             width: 100%;
-            height: 10px;
-            -webkit-appearance: none;
-            background: #ddd;
-            border-radius: 5px;
-            outline: none;
+            height: 200px;
+            background: linear-gradient(180deg, #111 0%, #0a0a0a 100%);
+            border-radius: 20px;
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 30px;
+            border: 1px solid #222;
         }
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 20px;
-            height: 20px;
-            background: #3498db;
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .status-indicator {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
+            background: #333;
+            transition: background 0.3s;
+        }
+
+        .status-indicator.active {
+            background: #10b981;
+            box-shadow: 0 0 10px #10b981;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .control-group {
+            background: #111;
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid #222;
+        }
+
+        .control-label {
+            font-size: 0.85rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        .interval-buttons {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .source-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .auto-loop-controls {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            border: 1px solid #2a2a2a;
+        }
+
+        .auto-loop-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        button {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            color: #fff;
+            padding: 15px;
+            border-radius: 12px;
+            font-size: 1rem;
             cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+            touch-action: manipulation;
         }
-        .value-display {
-            text-align: right;
-            font-size: 0.9em;
-            color: #777;
-            margin-top: 5px;
+
+        button:hover {
+            background: #222;
+            border-color: #444;
         }
-        .lfo-visualizer {
-            height: 20px;
-            background: linear-gradient(to right, #2ecc71, #3498db, #2ecc71);
-            border-radius: 10px;
-            margin: 10px 0;
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button.selected {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: transparent;
+            color: white;
+        }
+
+        button.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            padding: 20px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            margin-top: 10px;
+        }
+
+        button.primary:active {
+            transform: scale(0.98);
+            opacity: 0.9;
+        }
+
+        button.primary.stop {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        button.toggle-btn {
+            width: 100%;
+            padding: 18px;
+            margin-top: 15px;
+            border: 1px solid #444;
+            background: transparent;
             position: relative;
             overflow: hidden;
         }
-        .lfo-indicator {
-            position: absolute;
-            top: 0;
-            left: 0;
-            height: 100%;
-            width: 2px;
-            background: #e74c3c;
-            border-radius: 1px;
-        }
-        select, button {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 1em;
-            background-color: white;
-            cursor: pointer;
-        }
-        select:focus, button:focus {
-            outline: none;
-            border-color: #3498db;
-        }
-        button {
-            background-color: #3498db;
+
+        button.toggle-btn.active {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border-color: transparent;
             color: white;
-            border: none;
-            font-weight: bold;
-            transition: background-color 0.3s;
         }
-        button:hover {
-            background-color: #2980b9;
+
+        button.toggle-btn::before {
+            content: '';
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #444;
+            transition: background 0.2s;
         }
-        button:disabled {
-            background-color: #95a5a6;
-            cursor: not-allowed;
+
+        button.toggle-btn.active::before {
+            background: rgba(255,255,255,0.9);
+            box-shadow: 0 0 8px rgba(255,255,255,0.5);
         }
-        .status {
-            margin-top: 20px;
-            padding: 10px;
-            text-align: center;
-            font-weight: bold;
-            border-radius: 5px;
-        }
-        .status.active {
-            background-color: #d4edda;
-            color: #155724;
-        }
-        .status.inactive {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-        .grid-2 {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-        .current-taps-display {
-            font-size: 1.2em;
-            font-weight: bold;
-            color: #2c3e50;
-            text-align: center;
-            padding: 10px;
-            background-color: #ecf0f1;
-            border-radius: 5px;
+
+        .slider-container {
             margin-top: 10px;
         }
-        @media (max-width: 600px) {
-            .grid-2 {
-                grid-template-columns: 1fr;
-            }
+
+        .slider-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .slider-label {
+            font-size: 0.8rem;
+            color: #888;
+            min-width: 80px;
+            text-align: right;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #222;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(102, 126, 234, 0.4);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 10px rgba(102, 126, 234, 0.4);
+        }
+
+        .value-display {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 1.2rem;
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .current-value {
+            text-align: center;
+            font-size: 1rem;
+            color: #10b981;
+            font-weight: 600;
+            margin-top: 8px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .info {
+            text-align: center;
+            color: #555;
+            font-size: 0.8rem;
+            margin-top: 20px;
+            line-height: 1.5;
+        }
+
+        .warning {
+            background: rgba(245, 87, 108, 0.1);
+            border: 1px solid rgba(245, 87, 108, 0.3);
+            color: #f5576c;
+            padding: 15px;
+            border-radius: 12px;
+            text-align: center;
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .warning.show {
+            display: block;
+        }
+
+        .mode-indicator {
+            text-align: center;
+            padding: 10px;
+            border-radius: 8px;
+            background: #0a0a0a;
+            margin-bottom: 15px;
+            font-size: 0.85rem;
+            color: #666;
+            border: 1px solid #222;
+        }
+
+        .mode-indicator.inverted {
+            color: #f5576c;
+            border-color: #f5576c;
+            background: rgba(245, 87, 108, 0.05);
+        }
+
+        .mode-indicator.rotating {
+            color: #10b981;
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.05);
+        }
+
+        .rotation-visual {
+            width: 60px;
+            height: 60px;
+            margin: 15px auto;
+            position: relative;
+            border: 2px solid #333;
+            border-radius: 50%;
+            display: none;
+        }
+
+        .rotation-visual.active {
+            display: block;
+        }
+
+        .rotation-dot {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #10b981;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            margin-left: -5px;
+            margin-top: -25px;
+            transform-origin: 50% 25px;
+            box-shadow: 0 0 10px #10b981;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .auto-loop-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(16, 185, 129, 0.05);
+            border-radius: 8px;
+            border: 1px solid #1a3a2a;
+        }
+
+        .auto-loop-indicator.active {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: #10b981;
+        }
+
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            background: #10b981;
+            border-radius: 50%;
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+
+        @media (max-width: 380px) {
+            h1 { font-size: 2rem; }
+            .interval-buttons { grid-template-columns: 1fr 1fr; }
+            .auto-loop-row { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>AuraConv Filter (Moving Average Convolution)</h1>
+        <header>
+            <h1>AuraConv</h1>
+            <div class="subtitle">Convolution Filter</div>
+        </header>
 
-        <div class="section">
-            <h2>Core Filter Controls</h2>
-            <div class="grid-2">
-                <div class="control-group">
-                    <label for="filterLength">Filter Length (Taps)</label>
-                    <input type="range" id="filterLength" min="25" max="5000" value="1000" step="1">
-                    <div class="value-display" id="filterLengthValue">1000 taps</div>
-                </div>
-                <div class="control-group">
-                    <label for="outputGain">Output Gain</label>
-                    <input type="range" id="outputGain" min="0" max="1" value="0.15" step="0.01">
-                    <div class="value-display" id="outputGainValue">0.15</div>
-                </div>
-            </div>
+        <div class="warning" id="warning">
+            Please allow microphone access to use this app.
         </div>
 
-        <div class="section">
-            <h2>LFO Modulation</h2>
-            <div class="grid-2">
-                <div class="control-group">
-                    <label for="lfoEnabled">Enable LFO Modulation</label>
-                    <select id="lfoEnabled">
-                        <option value="0">Disabled</option>
-                        <option value="1">Enabled</option>
-                    </select>
-                </div>
-                <div class="control-group">
-                    <label for="lfoRate">LFO Loop Duration (seconds)</label>
-                    <input type="range" id="lfoRate" min="0.1" max="10" value="2" step="0.1">
-                    <div class="value-display" id="lfoRateValue">2.0 seconds</div>
-                </div>
-            </div>
-            <div class="lfo-visualizer" id="lfoVisualizer">
-                <div class="lfo-indicator" id="lfoIndicator"></div>
-            </div>
-            <div class="current-taps-display" id="currentTapsDisplay">
-                Current Taps: 1000
-            </div>
+        <div class="visualizer">
+            <canvas id="canvas"></canvas>
+            <div class="status-indicator" id="status"></div>
         </div>
 
-        <div class="section">
-            <h2>Input Source</h2>
+        <div class="controls">
             <div class="control-group">
-                <label for="inputSource">Audio Input</label>
-                <select id="inputSource">
-                    <option value="white">White Noise</option>
-                    <option value="mic">Live Microphone Input</option>
-                    <option value="both">White Noise + Microphone</option>
-                </select>
+                <label class="control-label">Audio Source</label>
+                <div class="source-buttons">
+                    <button class="source-btn selected" data-source="mic">Microphone</button>
+                    <button class="source-btn" data-source="noise">White Noise</button>
+                </div>
             </div>
-        </div>
 
-        <div class="section">
-            <h2>Polarity Inversion</h2>
             <div class="control-group">
-                <label for="polarityInversion">Invert Polarity</label>
-                <select id="polarityInversion">
-                    <option value="none">Neither</option>
-                    <option value="white">White Noise Only</option>
-                    <option value="mic">Microphone Only</option>
-                    <option value="both">Both</option>
-                </select>
+                <label class="control-label">Block Interval (samples)</label>
+                <div class="interval-buttons">
+                    <button class="interval-btn selected" data-value="50">50</button>
+                    <button class="interval-btn" data-value="100">100</button>
+                    <button class="interval-btn" data-value="200">200</button>
+                    <button class="interval-btn" data-value="500">500</button>
+                    <button class="interval-btn" data-value="1000">1k</button>
+                    <button class="interval-btn" data-value="2000">2k</button>
+                </div>
             </div>
-        </div>
 
-        <div class="section">
-            <button id="toggleAudio">Start Audio</button>
-            <div class="status inactive" id="audioStatus">Audio Stopped</div>
+            <div class="control-group">
+                <label class="control-label">Block Duration: <span id="durationValue">50</span>%</label>
+                <div class="slider-container">
+                    <input type="range" id="durationSlider" min="10" max="90" value="50">
+                </div>
+            </div>
+
+            <!-- NEW: Auto-Loop Controls -->
+            <div class="control-group">
+                <label class="control-label">Auto-Loop Taps/Blocks</label>
+                <button class="toggle-btn" id="autoLoopBtn">
+                    Enable Auto-Loop
+                </button>
+                <div class="auto-loop-controls" id="autoLoopControls">
+                    <div class="auto-loop-row">
+                        <div class="slider-container">
+                            <div class="slider-row">
+                                <span class="slider-label">Min:</span>
+                                <input type="range" id="autoLoopMin" min="50" max="2000" value="50" step="50">
+                                <span id="autoLoopMinValue">50</span>
+                            </div>
+                        </div>
+                        <div class="slider-container">
+                            <div class="slider-row">
+                                <span class="slider-label">Max:</span>
+                                <input type="range" id="autoLoopMax" min="50" max="2000" value="2000" step="50">
+                                <span id="autoLoopMaxValue">2000</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="slider-container">
+                        <div class="slider-row">
+                            <span class="slider-label">Loop Time:</span>
+                            <input type="range" id="autoLoopTime" min="0.5" max="10" value="2" step="0.5">
+                            <span id="autoLoopTimeValue">2.0s</span>
+                        </div>
+                    </div>
+                    <div class="auto-loop-indicator" id="autoLoopIndicator">
+                        <div class="pulse-dot"></div>
+                        <span id="currentTapsValue">Current: 1000 taps</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="mode-indicator" id="modeIndicator">
+                    Mode: Block Intervals (Silence Gaps)
+                </div>
+
+                <button class="toggle-btn" id="invertPolarityBtn">
+                    Invert Blocking Polarity
+                </button>
+
+                <div style="margin-top: 15px; padding: 12px; background: #0a0a0a; border-radius: 8px; border: 1px solid #222;">
+                    <p style="font-size: 0.8rem; color: #666; line-height: 1.4;">
+                        <strong style="color: #888;">OFF:</strong> Block out intervals (normal gaps)<br>
+                        <strong style="color: #f5576c;">ON:</strong> Pass only intervals (chopped bursts)
+                    </p>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">Circular Rotation (3D Spatial)</label>
+                <button class="toggle-btn" id="rotationBtn">
+                    Enable Rotation
+                </button>
+
+                <div class="rotation-visual" id="rotationVisual">
+                    <div class="rotation-dot" id="rotationDot"></div>
+                </div>
+
+                <div class="slider-container" style="margin-top: 15px; opacity: 0.5; pointer-events: none;" id="rateContainer">
+                    <label class="control-label">Rotation Rate (Hz): <span id="rateValue">0.5</span> Hz</label>
+                    <input type="range" id="rateSlider" min="0.1" max="2.0" value="0.5" step="0.1">
+                    <p style="font-size: 0.75rem; color: #555; margin-top: 8px; text-align: center;">
+                        Headphones recommended for full 3D effect
+                    </p>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">Convolution Reverb</label>
+                <div class="slider-container">
+                    <label class="control-label">Decay Time</label>
+                    <input type="range" id="decaySlider" min="1" max="10" value="3" step="0.1">
+                </div>
+            </div>
+
+            <button class="primary" id="toggleBtn">Start Audio</button>
+
+            <div class="info">
+                AuraConv processes audio with interval blocking, spatial rotation, and convolution reverb.<br>
+                Best experienced with headphones.
+            </div>
         </div>
     </div>
 
     <script>
-        // Main audio context and nodes
-        let audioContext;
-        let auraConvNode;
-        let whiteNoiseNode;
-        let micSource;
-        let outputGainNode;
-        let isAudioRunning = false;
-        let currentLfoSize = 1000;
+        let audioContext = null;
+        let mediaStream = null;
+        let isRunning = false;
+        let blockInterval = 50;
+        let blockDuration = 0.5;
+        let decayTime = 3;
+        let invertPolarity = false;
+        let sourceType = 'mic'; // 'mic' or 'noise'
+        let noiseNode = null;
+        let scriptNode = null;
+        let convolver = null;
+        let gainNode = null;
+        let analyser = null;
+        let pannerNode = null;
+        let sampleCounter = 0;
 
-        // DOM elements
-        const toggleAudioBtn = document.getElementById('toggleAudio');
-        const audioStatus = document.getElementById('audioStatus');
-        const filterLengthSlider = document.getElementById('filterLength');
-        const filterLengthValue = document.getElementById('filterLengthValue');
-        const outputGainSlider = document.getElementById('outputGain');
-        const outputGainValue = document.getElementById('outputGainValue');
-        const lfoEnabledSelect = document.getElementById('lfoEnabled');
-        const lfoRateSlider = document.getElementById('lfoRate');
-        const lfoRateValue = document.getElementById('lfoRateValue');
-        const inputSourceSelect = document.getElementById('inputSource');
-        const polarityInversionSelect = document.getElementById('polarityInversion');
-        const lfoVisualizer = document.getElementById('lfoVisualizer');
-        const lfoIndicator = document.getElementById('lfoIndicator');
-        const currentTapsDisplay = document.getElementById('currentTapsDisplay');
+        // Auto-loop variables
+        let autoLoopEnabled = false;
+        let autoLoopMin = 50;
+        let autoLoopMax = 2000;
+        let autoLoopTime = 2.0; // seconds
+        let autoLoopStartTime = 0;
+        let currentAutoLoopValue = 1000;
 
-        // Register AudioWorklet processor
-        async function registerProcessor() {
-            if (!audioContext) {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        // Rotation variables
+        let rotationEnabled = false;
+        let rotationRate = 0.5; // Hz
+        let rotationStartTime = 0;
+
+        const canvas = document.getElementById('canvas');
+        const canvasCtx = canvas.getContext('2d');
+        const toggleBtn = document.getElementById('toggleBtn');
+        const statusIndicator = document.getElementById('status');
+        const warning = document.getElementById('warning');
+        const durationSlider = document.getElementById('durationSlider');
+        const durationValue = document.getElementById('durationValue');
+        const decaySlider = document.getElementById('decaySlider');
+        const invertPolarityBtn = document.getElementById('invertPolarityBtn');
+        const modeIndicator = document.getElementById('modeIndicator');
+        const rotationBtn = document.getElementById('rotationBtn');
+        const rateSlider = document.getElementById('rateSlider');
+        const rateValue = document.getElementById('rateValue');
+        const rateContainer = document.getElementById('rateContainer');
+        const rotationVisual = document.getElementById('rotationVisual');
+        const rotationDot = document.getElementById('rotationDot');
+
+        // Auto-loop UI elements
+        const autoLoopBtn = document.getElementById('autoLoopBtn');
+        const autoLoopControls = document.getElementById('autoLoopControls');
+        const autoLoopMinSlider = document.getElementById('autoLoopMin');
+        const autoLoopMinValue = document.getElementById('autoLoopMinValue');
+        const autoLoopMaxSlider = document.getElementById('autoLoopMax');
+        const autoLoopMaxValue = document.getElementById('autoLoopMaxValue');
+        const autoLoopTimeSlider = document.getElementById('autoLoopTime');
+        const autoLoopTimeValue = document.getElementById('autoLoopTimeValue');
+        const autoLoopIndicator = document.getElementById('autoLoopIndicator');
+        const currentTapsValue = document.getElementById('currentTapsValue');
+
+        // Resize canvas
+        function resizeCanvas() {
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Calculate current auto-loop value
+        function getCurrentAutoLoopValue() {
+            if (!autoLoopEnabled) return blockInterval;
+
+            const now = audioContext ? audioContext.currentTime : performance.now() / 1000;
+            const elapsed = now - autoLoopStartTime;
+            const normalizedTime = (elapsed % autoLoopTime) / autoLoopTime;
+
+            // Triangle wave: 0 -> 1 -> 0
+            const triangleWave = normalizedTime < 0.5 ?
+                normalizedTime * 2 :
+                (1 - normalizedTime) * 2;
+
+            // Map to min-max range
+            currentAutoLoopValue = Math.round(autoLoopMin + (autoLoopMax - autoLoopMin) * triangleWave);
+            return currentAutoLoopValue;
+        }
+
+        // Create white noise buffer
+        function createNoiseBuffer() {
+            const bufferSize = audioContext.sampleRate * 2; // 2 seconds of noise
+            const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = Math.random() * 2 - 1;
             }
-
-            const processorCode = `
-                class AuraConvProcessor extends AudioWorkletProcessor {
-                    constructor() {
-                        super();
-                        this.buffer = new Float32Array(5000);
-                        this.bufferPos = 0;
-                        this.sum = 0;
-                        this.currentSize = 1000;
-                        this.lastSize = 1000;
-                        this.lfoPhase = 0;
-                        this.lastTime = 0;
-                        this.lastMessageTime = 0;
-                        this.gain = 0.15;
-                        this.lfoEnabled = false;
-                        this.lfoRate = 2.0;
-                        this.inputSource = 'white';
-                        this.polarityInversion = 'none';
-                        this.port.onmessage = (e) => {
-                            if (e.data.type === 'params') {
-                                const newSize = e.data.filterLength;
-                                this.gain = e.data.gain;
-                                this.lfoEnabled = e.data.lfoEnabled;
-                                this.lfoRate = e.data.lfoRate;
-                                this.inputSource = e.data.inputSource;
-                                this.polarityInversion = e.data.polarityInversion;
-
-                                // If LFO is disabled, use the slider value
-                                if (!this.lfoEnabled) {
-                                    this.currentSize = newSize;
-                                }
-                                // Force sum recalculation if size changed
-                                if (this.currentSize !== this.lastSize) {
-                                    this.sum = 0;
-                                    for (let i = 0; i < this.currentSize; i++) {
-                                        const idx = (this.bufferPos - i + 5000) % 5000;
-                                        this.sum += this.buffer[idx];
-                                    }
-                                    this.lastSize = this.currentSize;
-                                }
-                            }
-                        };
-                    }
-
-                    process(inputs, outputs, parameters) {
-                        const output = outputs[0];
-                        const now = performance.now() / 1000;
-
-                        // Update LFO phase if enabled
-                        if (this.lfoEnabled) {
-                            if (this.lastTime > 0) {
-                                const deltaTime = now - this.lastTime;
-                                this.lfoPhase = (this.lfoPhase + deltaTime / this.lfoRate) % 1;
-                            }
-                            this.lastTime = now;
-                            const lfoValue = 0.5 + 0.5 * Math.sin(2 * Math.PI * this.lfoPhase);
-                            const modulatedSize = Math.floor(25 + lfoValue * (5000 - 25));
-                            this.currentSize = modulatedSize;
-                        }
-
-                        // Recalculate sum if size changed
-                        if (this.currentSize !== this.lastSize) {
-                            this.sum = 0;
-                            for (let i = 0; i < this.currentSize; i++) {
-                                const idx = (this.bufferPos - i + 5000) % 5000;
-                                this.sum += this.buffer[idx];
-                            }
-                            this.lastSize = this.currentSize;
-                        }
-
-                        // Send current size to main thread for visualization (throttled)
-                        if (this.lfoEnabled && now - this.lastMessageTime >= 0.05) {
-                            this.port.postMessage({
-                                type: 'currentSize',
-                                size: this.currentSize,
-                                phase: this.lfoPhase
-                            });
-                            this.lastMessageTime = now;
-                        }
-
-                        for (let i = 0; i < output[0].length; i++) {
-                            let inputSample = 0;
-
-                            // Handle input sources
-                            if (this.inputSource === 'mic' || this.inputSource === 'both') {
-                                if (inputs.length > 0 && inputs[0].length > 0) {
-                                    inputSample += (inputs[0][0][i] + inputs[0][1][i]) * 0.5;
-                                }
-                            }
-                            if (this.inputSource === 'white' || this.inputSource === 'both') {
-                                inputSample += Math.random() * 2 - 1;
-                            }
-
-                            // Apply polarity inversion
-                            let micSample = 0;
-                            let noiseSample = 0;
-                            if (this.inputSource === 'mic' || this.inputSource === 'both') {
-                                if (inputs.length > 0 && inputs[0].length > 0) {
-                                    micSample = (inputs[0][0][i] + inputs[0][1][i]) * 0.5;
-                                }
-                            }
-                            if (this.inputSource === 'white' || this.inputSource === 'both') {
-                                noiseSample = Math.random() * 2 - 1;
-                            }
-
-                            if (this.polarityInversion === 'white') {
-                                noiseSample *= -1;
-                            } else if (this.polarityInversion === 'mic') {
-                                micSample *= -1;
-                            } else if (this.polarityInversion === 'both') {
-                                micSample *= -1;
-                                noiseSample *= -1;
-                            }
-
-                            inputSample = micSample + noiseSample;
-
-                            // Moving average convolution
-                            this.sum -= this.buffer[this.bufferPos];
-                            this.buffer[this.bufferPos] = inputSample;
-                            this.sum += inputSample;
-                            this.bufferPos = (this.bufferPos + 1) % 5000;
-
-                            const filtered = (this.sum / this.currentSize) * this.gain;
-
-                            output[0][i] = filtered;
-                            output[1][i] = filtered;
-                        }
-
-                        return true;
-                    }
-                }
-                registerProcessor('auraconv-processor', AuraConvProcessor);
-            `;
-
-            const blob = new Blob([processorCode], { type: 'application/javascript' });
-            const url = URL.createObjectURL(blob);
-            await audioContext.audioWorklet.addModule(url);
-            URL.revokeObjectURL(url);
+            return buffer;
         }
 
-        // Update LFO visualizer
-        function updateLfoVisualizer(phase) {
-            const percent = phase * 100;
-            lfoIndicator.style.left = `${percent}%`;
-        }
+        // Create impulse response for convolution
+        function createImpulseResponse(duration) {
+            const sampleRate = audioContext.sampleRate;
+            const length = sampleRate * duration;
+            const impulse = audioContext.createBuffer(2, length, sampleRate);
 
-        // Create white noise node
-        function createWhiteNoiseNode() {
-            const bufferSize = 4096;
-            const buffer = audioContext.createBuffer(2, bufferSize, audioContext.sampleRate);
-            for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-                const data = buffer.getChannelData(channel);
-                for (let i = 0; i < bufferSize; i++) {
-                    data[i] = Math.random() * 2 - 1;
+            for (let channel = 0; channel < 2; channel++) {
+                const channelData = impulse.getChannelData(channel);
+                for (let i = 0; i < length; i++) {
+                    const noise = Math.random() * 2 - 1;
+                    channelData[i] = noise * Math.pow(1 - i / length, 2);
                 }
             }
-            const node = audioContext.createBufferSource();
-            node.buffer = buffer;
-            node.loop = true;
-            return node;
+            return impulse;
         }
 
-        // Start or stop microphone
-        async function toggleMicrophone(enable) {
-            if (enable) {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    if (micSource) {
-                        micSource.disconnect();
+        // Setup audio source (mic or noise)
+        function setupSource() {
+            if (sourceType === 'mic') {
+                return navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
                     }
-                    micSource = audioContext.createMediaStreamSource(stream);
-                    micSource.connect(auraConvNode);
-                } catch (err) {
-                    console.error("Error accessing microphone:", err);
-                    audioStatus.textContent = "Microphone access denied";
-                    audioStatus.className = "status inactive";
-                }
-            } else if (micSource) {
-                micSource.disconnect();
-                micSource.mediaStream.getTracks().forEach(track => track.stop());
-                micSource = null;
-            }
-        }
-
-        // Update processor parameters
-        function updateProcessorParams() {
-            if (auraConvNode) {
-                auraConvNode.port.postMessage({
-                    type: 'params',
-                    filterLength: parseInt(filterLengthSlider.value),
-                    gain: parseFloat(outputGainSlider.value),
-                    lfoEnabled: lfoEnabledSelect.value === '1',
-                    lfoRate: parseFloat(lfoRateSlider.value),
-                    inputSource: inputSourceSelect.value,
-                    polarityInversion: polarityInversionSelect.value
+                }).then(stream => {
+                    mediaStream = stream;
+                    return audioContext.createMediaStreamSource(stream);
+                });
+            } else {
+                // White noise source
+                return new Promise((resolve) => {
+                    noiseNode = audioContext.createBufferSource();
+                    noiseNode.buffer = createNoiseBuffer();
+                    noiseNode.loop = true;
+                    noiseNode.start(0);
+                    // Create a gain node to control noise volume
+                    const noiseGain = audioContext.createGain();
+                    noiseGain.gain.value = 0.5; // Lower volume for comfort
+                    noiseNode.connect(noiseGain);
+                    resolve(noiseGain);
                 });
             }
         }
 
-        // Update UI state
-        function updateUIState() {
-            toggleAudioBtn.textContent = isAudioRunning ? 'Stop Audio' : 'Start Audio';
-            audioStatus.textContent = isAudioRunning ? 'Audio Running' : 'Audio Stopped';
-            audioStatus.className = isAudioRunning ? 'status active' : 'status inactive';
+        // Audio processing
+        function setupAudioProcessing() {
+            const bufferSize = 4096;
+            scriptNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
 
-            // Update microphone based on input source
-            const needsMic = inputSourceSelect.value === 'mic' || inputSourceSelect.value === 'both';
-            if (isAudioRunning) {
-                toggleMicrophone(needsMic);
+            scriptNode.onaudioprocess = function(e) {
+                // Get current block interval (either from auto-loop or manual selection)
+                const currentBlockInterval = autoLoopEnabled ? getCurrentAutoLoopValue() : blockInterval;
+
+                const inputData = e.inputBuffer.getChannelData(0);
+                const outputData = e.outputBuffer.getChannelData(0);
+                const bufferLength = inputData.length;
+
+                for (let i = 0; i < bufferLength; i++) {
+                    sampleCounter++;
+
+                    const positionInInterval = sampleCounter % currentBlockInterval;
+                    const blockLength = Math.floor(currentBlockInterval * blockDuration);
+                    const isInBlockZone = positionInInterval < blockLength;
+
+                    let shouldMute;
+                    if (invertPolarity) {
+                        shouldMute = !isInBlockZone;
+                    } else {
+                        shouldMute = isInBlockZone;
+                    }
+
+                    if (shouldMute) {
+                        outputData[i] = 0;
+                    } else {
+                        outputData[i] = inputData[i];
+                    }
+                }
+            };
+        }
+
+        // Setup spatial rotation
+        function setupRotation() {
+            if (!rotationEnabled) return null;
+
+            pannerNode = audioContext.createPanner();
+            pannerNode.panningModel = 'HRTF';
+            pannerNode.distanceModel = 'inverse';
+            pannerNode.refDistance = 1;
+            pannerNode.maxDistance = 100;
+            pannerNode.rolloffFactor = 1;
+            pannerNode.coneInnerAngle = 360;
+            pannerNode.coneOuterAngle = 0;
+            pannerNode.coneOuterGain = 0;
+
+            // Start at front
+            pannerNode.positionX.value = 0;
+            pannerNode.positionY.value = 0;
+            pannerNode.positionZ.value = 2;
+
+            rotationStartTime = audioContext.currentTime;
+
+            return pannerNode;
+        }
+
+        // Update rotation position
+        function updateRotation() {
+            if (!rotationEnabled || !pannerNode || !isRunning) return;
+
+            const elapsed = audioContext.currentTime - rotationStartTime;
+            const angle = 2 * Math.PI * rotationRate * elapsed;
+
+            // Circular motion around listener head (radius = 2)
+            const x = Math.sin(angle) * 2; // Left-right
+            const z = Math.cos(angle) * 2; // Front-back
+
+            pannerNode.positionX.setValueAtTime(x, audioContext.currentTime);
+            pannerNode.positionZ.setValueAtTime(z, audioContext.currentTime);
+
+            // Update visual indicator
+            const degrees = (angle * 180 / Math.PI) % 360;
+            rotationDot.style.transform = `rotate(${degrees}deg)`;
+        }
+
+        // Update auto-loop display
+        function updateAutoLoopDisplay() {
+            if (!autoLoopEnabled) {
+                currentTapsValue.textContent = `Current: ${blockInterval} taps`;
+                autoLoopIndicator.classList.remove('active');
+                return;
+            }
+
+            const currentValue = getCurrentAutoLoopValue();
+            currentTapsValue.textContent = `Current: ${currentValue} taps`;
+            autoLoopIndicator.classList.add('active');
+        }
+
+        // Visualization
+        function visualize() {
+            if (!isRunning) return;
+
+            requestAnimationFrame(visualize);
+            updateRotation();
+            updateAutoLoopDisplay();
+
+            if (!analyser) return;
+
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+
+            canvasCtx.fillStyle = '#111';
+            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const barWidth = (canvas.width / bufferLength) * 2.5;
+            let barHeight;
+            let x = 0;
+
+            for(let i = 0; i < bufferLength; i++) {
+                barHeight = dataArray[i] / 255 * canvas.height;
+
+                const gradient = canvasCtx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
+                if (invertPolarity) {
+                    gradient.addColorStop(0, '#f5576c');
+                    gradient.addColorStop(1, '#f093fb');
+                } else if (rotationEnabled) {
+                    gradient.addColorStop(0, '#10b981');
+                    gradient.addColorStop(1, '#059669');
+                } else if (autoLoopEnabled) {
+                    gradient.addColorStop(0, '#3b82f6');
+                    gradient.addColorStop(1, '#1d4ed8');
+                } else {
+                    gradient.addColorStop(0, '#667eea');
+                    gradient.addColorStop(1, '#764ba2');
+                }
+
+                canvasCtx.fillStyle = gradient;
+                canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+                x += barWidth + 1;
             }
         }
 
-        // Initialize audio graph
-        async function initAudio() {
-            try {
-                await registerProcessor();
-
-                // Create nodes
-                auraConvNode = new AudioWorkletNode(audioContext, 'auraconv-processor');
-                outputGainNode = audioContext.createGain();
-                whiteNoiseNode = createWhiteNoiseNode();
-
-                // Connect nodes
-                whiteNoiseNode.connect(auraConvNode);
-                auraConvNode.connect(outputGainNode);
-                outputGainNode.connect(audioContext.destination);
-
-                // Set default gain
-                outputGainNode.gain.value = parseFloat(outputGainSlider.value);
-
-                // Listen for messages from AudioWorklet
-                auraConvNode.port.onmessage = (e) => {
-                    if (e.data.type === 'currentSize') {
-                        currentLfoSize = e.data.size;
-                        currentTapsDisplay.textContent = `Current Taps: ${currentLfoSize}`;
-                        updateLfoVisualizer(e.data.phase);
-                    }
-                };
-
-                // Update processor parameters
-                updateProcessorParams();
-
-                // Start white noise (always running, but muted if not selected)
-                whiteNoiseNode.start();
-
-                isAudioRunning = true;
-                updateUIState();
-            } catch (err) {
-                console.error("Error initializing audio:", err);
-                audioStatus.textContent = "Error: " + err.message;
-                audioStatus.className = "status inactive";
+        // Start/Stop
+        async function toggleAudio() {
+            if (isRunning) {
+                stopAudio();
+            } else {
+                await startAudio();
             }
+        }
+
+        async function startAudio() {
+            try {
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+
+                const source = await setupSource();
+
+                convolver = audioContext.createConvolver();
+                convolver.buffer = createImpulseResponse(decayTime);
+
+                gainNode = audioContext.createGain();
+                gainNode.gain.value = 0.8;
+
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+
+                setupAudioProcessing();
+
+                const panner = setupRotation();
+
+                // Chain: Source -> ScriptProcessor -> [Panner] -> Convolver -> Gain -> Analyser -> Destination
+                source.connect(scriptNode);
+
+                if (panner) {
+                    scriptNode.connect(panner);
+                    panner.connect(convolver);
+                } else {
+                    scriptNode.connect(convolver);
+                }
+
+                convolver.connect(gainNode);
+                gainNode.connect(analyser);
+                analyser.connect(audioContext.destination);
+
+                isRunning = true;
+                toggleBtn.textContent = 'Stop Audio';
+                toggleBtn.classList.add('stop');
+                statusIndicator.classList.add('active');
+                warning.classList.remove('show');
+
+                // Set auto-loop start time
+                autoLoopStartTime = audioContext.currentTime;
+
+                visualize();
+
+            } catch (err) {
+                console.error('Error:', err);
+                warning.classList.add('show');
+                warning.textContent = 'Error: ' + err.message;
+            }
+        }
+
+        function stopAudio() {
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+
+            if (noiseNode) {
+                noiseNode.stop();
+                noiseNode.disconnect();
+                noiseNode = null;
+            }
+
+            if (scriptNode) {
+                scriptNode.disconnect();
+                scriptNode = null;
+            }
+
+            if (convolver) {
+                convolver.disconnect();
+                convolver = null;
+            }
+
+            if (gainNode) {
+                gainNode.disconnect();
+                gainNode = null;
+            }
+
+            if (pannerNode) {
+                pannerNode.disconnect();
+                pannerNode = null;
+            }
+
+            isRunning = false;
+            toggleBtn.textContent = 'Start Audio';
+            toggleBtn.classList.remove('stop');
+            statusIndicator.classList.remove('active');
+            sampleCounter = 0;
+
+            canvasCtx.fillStyle = '#111';
+            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
         }
 
         // Event listeners
-        toggleAudioBtn.addEventListener('click', async () => {
-            if (!isAudioRunning) {
-                await initAudio();
-            } else {
-                if (micSource) {
-                    micSource.disconnect();
-                    micSource.mediaStream.getTracks().forEach(track => track.stop());
-                    micSource = null;
-                }
-                if (auraConvNode) {
-                    auraConvNode.disconnect();
-                    auraConvNode = null;
-                }
-                if (whiteNoiseNode) {
-                    whiteNoiseNode.disconnect();
-                    whiteNoiseNode = null;
-                }
-                if (outputGainNode) {
-                    outputGainNode.disconnect();
-                    outputGainNode = null;
-                }
-                isAudioRunning = false;
-                updateUIState();
-            }
-        });
+        toggleBtn.addEventListener('click', toggleAudio);
 
-        // Slider and select event listeners
-        filterLengthSlider.addEventListener('input', () => {
-            filterLengthValue.textContent = `${filterLengthSlider.value} taps`;
-            updateProcessorParams();
-        });
-
-        outputGainSlider.addEventListener('input', () => {
-            outputGainValue.textContent = outputGainSlider.value;
-            if (outputGainNode) {
-                outputGainNode.gain.value = parseFloat(outputGainSlider.value);
-            }
-            updateProcessorParams();
-        });
-
-        lfoRateSlider.addEventListener('input', () => {
-            lfoRateValue.textContent = `${lfoRateSlider.value} seconds`;
-            updateProcessorParams();
-        });
-
-        [lfoEnabledSelect, inputSourceSelect, polarityInversionSelect].forEach(el => {
-            el.addEventListener('change', () => {
-                updateProcessorParams();
-                updateUIState();
+        // Source selection
+        document.querySelectorAll('.source-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                if (isRunning) {
+                    stopAudio();
+                }
+                document.querySelectorAll('.source-btn').forEach(b => b.classList.remove('selected'));
+                e.target.classList.add('selected');
+                sourceType = e.target.dataset.source;
             });
         });
 
+        document.querySelectorAll('.interval-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.interval-btn').forEach(b => b.classList.remove('selected'));
+                e.target.classList.add('selected');
+                blockInterval = parseInt(e.target.dataset.value);
+                if (!autoLoopEnabled) {
+                    currentTapsValue.textContent = `Current: ${blockInterval} taps`;
+                }
+            });
+        });
+
+        durationSlider.addEventListener('input', (e) => {
+            blockDuration = parseInt(e.target.value) / 100;
+            durationValue.textContent = e.target.value;
+        });
+
+        decaySlider.addEventListener('input', (e) => {
+            decayTime = parseFloat(e.target.value);
+            if (isRunning && convolver) {
+                convolver.buffer = createImpulseResponse(decayTime);
+            }
+        });
+
+        invertPolarityBtn.addEventListener('click', () => {
+            invertPolarity = !invertPolarity;
+            invertPolarityBtn.classList.toggle('active');
+
+            if (invertPolarity) {
+                modeIndicator.textContent = 'Mode: Pass Intervals (Chopped Bursts)';
+                modeIndicator.classList.add('inverted');
+            } else {
+                modeIndicator.textContent = 'Mode: Block Intervals (Silence Gaps)';
+                modeIndicator.classList.remove('inverted');
+            }
+        });
+
+        // Auto-loop controls
+        autoLoopBtn.addEventListener('click', () => {
+            autoLoopEnabled = !autoLoopEnabled;
+            autoLoopBtn.classList.toggle('active');
+            autoLoopControls.style.display = autoLoopEnabled ? 'block' : 'none';
+
+            if (autoLoopEnabled) {
+                // Set initial auto-loop start time
+                if (isRunning) {
+                    autoLoopStartTime = audioContext.currentTime;
+                }
+                updateAutoLoopDisplay();
+            } else {
+                autoLoopIndicator.classList.remove('active');
+            }
+        });
+
+        autoLoopMinSlider.addEventListener('input', (e) => {
+            autoLoopMin = parseInt(e.target.value);
+            autoLoopMinValue.textContent = autoLoopMin;
+            if (autoLoopEnabled && isRunning) {
+                updateAutoLoopDisplay();
+            }
+        });
+
+        autoLoopMaxSlider.addEventListener('input', (e) => {
+            autoLoopMax = parseInt(e.target.value);
+            autoLoopMaxValue.textContent = autoLoopMax;
+            if (autoLoopEnabled && isRunning) {
+                updateAutoLoopDisplay();
+            }
+        });
+
+        autoLoopTimeSlider.addEventListener('input', (e) => {
+            autoLoopTime = parseFloat(e.target.value);
+            autoLoopTimeValue.textContent = autoLoopTime.toFixed(1) + 's';
+        });
+
+        // Rotation controls
+        rotationBtn.addEventListener('click', () => {
+            rotationEnabled = !rotationEnabled;
+            rotationBtn.classList.toggle('active');
+
+            if (rotationEnabled) {
+                rateContainer.style.opacity = '1';
+                rateContainer.style.pointerEvents = 'auto';
+                rotationVisual.classList.add('active');
+                rotationDot.style.animation = `rotate ${1/rotationRate}s linear infinite`;
+            } else {
+                rateContainer.style.opacity = '0.5';
+                rateContainer.style.pointerEvents = 'none';
+                rotationVisual.classList.remove('active');
+                rotationDot.style.animation = 'none';
+            }
+
+            if (isRunning) {
+                // Restart to apply changes
+                stopAudio();
+                setTimeout(() => startAudio(), 100);
+            }
+        });
+
+        rateSlider.addEventListener('input', (e) => {
+            rotationRate = parseFloat(e.target.value);
+            rateValue.textContent = rotationRate.toFixed(1);
+            if (rotationEnabled && rotationDot) {
+                rotationDot.style.animation = `rotate ${1/rotationRate}s linear infinite`;
+            }
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            // Handle tab switching if needed
+        });
+
         // Initialize UI
-        filterLengthValue.textContent = `${filterLengthSlider.value} taps`;
-        outputGainValue.textContent = outputGainSlider.value;
-        lfoRateValue.textContent = `${lfoRateSlider.value} seconds`;
-        currentTapsDisplay.textContent = `Current Taps: ${currentLfoSize}`;
+        autoLoopControls.style.display = 'none';
+        currentTapsValue.textContent = `Current: ${blockInterval} taps`;
     </script>
 </body>
 </html>
