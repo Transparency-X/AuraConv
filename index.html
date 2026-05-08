@@ -256,7 +256,7 @@
         .slider-label {
             font-size: 0.8rem;
             color: #888;
-            min-width: 80px;
+            min-width: 100px;
             text-align: right;
         }
 
@@ -431,12 +431,24 @@
             line-height: 1.4;
         }
 
+        .block-info {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(102, 126, 234, 0.05);
+            border-radius: 8px;
+            border: 1px solid #2a2a3a;
+            font-size: 0.8rem;
+            color: #667eea;
+            text-align: center;
+        }
+
         @media (max-width: 380px) {
             h1 { font-size: 2rem; }
             .interval-buttons { grid-template-columns: 1fr 1fr; }
             .source-buttons { grid-template-columns: 1fr; }
             .auto-loop-row { grid-template-columns: 1fr; }
             .polarity-buttons { grid-template-columns: 1fr; }
+            .slider-label { min-width: 80px; }
         }
     </style>
 </head>
@@ -485,14 +497,17 @@
             </div>
 
             <div class="control-group">
-                <label class="control-label">Block Interval (samples)</label>
+                <label class="control-label">Block Samples</label>
+                <div class="block-info">
+                    Set the number of audio samples per processing block
+                </div>
                 <div class="interval-buttons">
                     <button class="interval-btn selected" data-value="50">50</button>
                     <button class="interval-btn" data-value="100">100</button>
                     <button class="interval-btn" data-value="200">200</button>
                     <button class="interval-btn" data-value="500">500</button>
-                    <button class="interval-btn" data-value="1000">1k</button>
-                    <button class="interval-btn" data-value="2000">2k</button>
+                    <button class="interval-btn" data-value="1000">1000</button>
+                    <button class="interval-btn" data-value="2000">2000</button>
                 </div>
             </div>
 
@@ -500,6 +515,9 @@
                 <label class="control-label">Block Duration: <span id="durationValue">50</span>%</label>
                 <div class="slider-container">
                     <input type="range" id="durationSlider" min="10" max="90" value="50">
+                </div>
+                <div class="block-info">
+                    Percentage of each block to apply processing to
                 </div>
             </div>
 
@@ -509,13 +527,13 @@
                     Invert Blocking Polarity
                 </button>
                 <div class="mode-indicator" id="modeIndicator">
-                    Mode: Block Intervals (Silence Gaps)
+                    Mode: Block Samples (Silence Gaps)
                 </div>
             </div>
 
             <!-- Auto-Loop Controls -->
             <div class="control-group">
-                <label class="control-label">Auto-Loop Taps/Blocks</label>
+                <label class="control-label">Auto-Loop Samples</label>
                 <button class="toggle-btn" id="autoLoopBtn">
                     Enable Auto-Loop
                 </button>
@@ -523,14 +541,14 @@
                     <div class="auto-loop-row">
                         <div class="slider-container">
                             <div class="slider-row">
-                                <span class="slider-label">Min:</span>
+                                <span class="slider-label">Min (samples):</span>
                                 <input type="range" id="autoLoopMin" min="50" max="2000" value="50" step="50">
                                 <span id="autoLoopMinValue">50</span>
                             </div>
                         </div>
                         <div class="slider-container">
                             <div class="slider-row">
-                                <span class="slider-label">Max:</span>
+                                <span class="slider-label">Max (samples):</span>
                                 <input type="range" id="autoLoopMax" min="50" max="2000" value="2000" step="50">
                                 <span id="autoLoopMaxValue">2000</span>
                             </div>
@@ -538,14 +556,14 @@
                     </div>
                     <div class="slider-container">
                         <div class="slider-row">
-                            <span class="slider-label">Loop Time:</span>
+                            <span class="slider-label">Loop Time (s):</span>
                             <input type="range" id="autoLoopTime" min="0.5" max="10" value="2" step="0.5">
                             <span id="autoLoopTimeValue">2.0s</span>
                         </div>
                     </div>
                     <div class="auto-loop-indicator" id="autoLoopIndicator">
                         <div class="pulse-dot"></div>
-                        <span id="currentTapsValue">Current: 1000 taps</span>
+                        <span id="currentSamplesValue">Current: 1000 samples</span>
                     </div>
                 </div>
             </div>
@@ -580,7 +598,7 @@
             <button class="primary" id="toggleBtn">Start Audio</button>
 
             <div class="info">
-                AuraConv processes audio with interval blocking, spatial rotation, and convolution reverb.<br>
+                AuraConv processes audio with sample blocking, spatial rotation, and convolution reverb.<br>
                 Best experienced with headphones.
             </div>
         </div>
@@ -590,7 +608,7 @@
         let audioContext = null;
         let mediaStream = null;
         let isRunning = false;
-        let blockInterval = 50;
+        let blockSamples = 50;
         let blockDuration = 0.5;
         let decayTime = 3;
         let invertBlocking = false;
@@ -648,7 +666,7 @@
         const autoLoopTimeSlider = document.getElementById('autoLoopTime');
         const autoLoopTimeValue = document.getElementById('autoLoopTimeValue');
         const autoLoopIndicator = document.getElementById('autoLoopIndicator');
-        const currentTapsValue = document.getElementById('currentTapsValue');
+        const currentSamplesValue = document.getElementById('currentSamplesValue');
 
         // Resize canvas
         function resizeCanvas() {
@@ -660,7 +678,7 @@
 
         // Calculate current auto-loop value
         function getCurrentAutoLoopValue() {
-            if (!autoLoopEnabled) return blockInterval;
+            if (!autoLoopEnabled) return blockSamples;
 
             const now = audioContext ? audioContext.currentTime : performance.now() / 1000;
             const elapsed = now - autoLoopStartTime;
@@ -814,8 +832,8 @@
             scriptNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
 
             scriptNode.onaudioprocess = function(e) {
-                // Get current block interval (either from auto-loop or manual selection)
-                const currentBlockInterval = autoLoopEnabled ? getCurrentAutoLoopValue() : blockInterval;
+                // Get current block samples (either from auto-loop or manual selection)
+                const currentBlockSamples = autoLoopEnabled ? getCurrentAutoLoopValue() : blockSamples;
 
                 const inputData = e.inputBuffer.getChannelData(0);
                 const outputData = e.outputBuffer.getChannelData(0);
@@ -824,8 +842,8 @@
                 for (let i = 0; i < bufferLength; i++) {
                     sampleCounter++;
 
-                    const positionInInterval = sampleCounter % currentBlockInterval;
-                    const blockLength = Math.floor(currentBlockInterval * blockDuration);
+                    const positionInInterval = sampleCounter % currentBlockSamples;
+                    const blockLength = Math.floor(currentBlockSamples * blockDuration);
                     const isInBlockZone = positionInInterval < blockLength;
 
                     let shouldMute;
@@ -890,17 +908,17 @@
         // Update auto-loop display
         function updateAutoLoopDisplay() {
             if (!autoLoopEnabled) {
-                currentTapsValue.textContent = `Current: ${blockInterval} taps`;
+                currentSamplesValue.textContent = `Current: ${blockSamples} samples`;
                 autoLoopIndicator.classList.remove('active');
                 return;
             }
 
             const currentValue = getCurrentAutoLoopValue();
-            currentTapsValue.textContent = `Current: ${currentValue} taps`;
+            currentSamplesValue.textContent = `Current: ${currentValue} samples`;
             autoLoopIndicator.classList.add('active');
         }
 
-        // Visualization
+        // Visualization - FIXED: Create gradient with finite values
         function visualize() {
             if (!isRunning) return;
 
@@ -917,27 +935,20 @@
             canvasCtx.fillStyle = '#111';
             canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
 
-            const barWidth = (canvas.width / bufferLength) * 2.5;
-            let barHeight;
-            let x = 0;
+            // Create gradient ONCE with finite, fixed coordinates
+            let gradient = canvasCtx.createLinearGradient(0, 0, 0, canvas.height);
 
-            // Determine visualization color based on active features
-            let gradient;
             if (invertBlocking) {
-                gradient = canvasCtx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
                 gradient.addColorStop(0, '#f5576c');
                 gradient.addColorStop(1, '#f093fb');
             } else if (rotationEnabled) {
-                gradient = canvasCtx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
                 gradient.addColorStop(0, '#10b981');
                 gradient.addColorStop(1, '#059669');
             } else if (autoLoopEnabled) {
-                gradient = canvasCtx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
                 gradient.addColorStop(0, '#3b82f6');
                 gradient.addColorStop(1, '#1d4ed8');
             } else {
                 // Default gradient based on polarity inversion
-                gradient = canvasCtx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
                 if (polarityInversion === 'none') {
                     gradient.addColorStop(0, '#667eea');
                     gradient.addColorStop(1, '#764ba2');
@@ -952,6 +963,10 @@
                     gradient.addColorStop(1, '#059669');
                 }
             }
+
+            const barWidth = (canvas.width / bufferLength) * 2.5;
+            let barHeight;
+            let x = 0;
 
             for(let i = 0; i < bufferLength; i++) {
                 barHeight = dataArray[i] / 255 * canvas.height;
@@ -1105,9 +1120,9 @@
             btn.addEventListener('click', (e) => {
                 document.querySelectorAll('.interval-btn').forEach(b => b.classList.remove('selected'));
                 e.target.classList.add('selected');
-                blockInterval = parseInt(e.target.dataset.value);
+                blockSamples = parseInt(e.target.dataset.value);
                 if (!autoLoopEnabled) {
-                    currentTapsValue.textContent = `Current: ${blockInterval} taps`;
+                    currentSamplesValue.textContent = `Current: ${blockSamples} samples`;
                 }
             });
         });
@@ -1129,10 +1144,10 @@
             invertBlockingBtn.classList.toggle('active');
 
             if (invertBlocking) {
-                modeIndicator.textContent = 'Mode: Pass Intervals (Chopped Bursts)';
+                modeIndicator.textContent = 'Mode: Pass Samples (Chopped Bursts)';
                 modeIndicator.classList.add('inverted');
             } else {
-                modeIndicator.textContent = 'Mode: Block Intervals (Silence Gaps)';
+                modeIndicator.textContent = 'Mode: Block Samples (Silence Gaps)';
                 modeIndicator.classList.remove('inverted');
             }
         });
@@ -1213,7 +1228,7 @@
 
         // Initialize UI
         autoLoopControls.style.display = 'none';
-        currentTapsValue.textContent = `Current: ${blockInterval} taps`;
+        currentSamplesValue.textContent = `Current: ${blockSamples} samples`;
     </script>
 </body>
 </html>
