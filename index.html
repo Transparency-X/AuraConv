@@ -120,7 +120,7 @@
 
         .source-buttons {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 10px;
         }
 
@@ -400,6 +400,7 @@
         @media (max-width: 380px) {
             h1 { font-size: 2rem; }
             .interval-buttons { grid-template-columns: 1fr 1fr; }
+            .source-buttons { grid-template-columns: 1fr; }
             .auto-loop-row { grid-template-columns: 1fr; }
         }
     </style>
@@ -426,6 +427,7 @@
                 <div class="source-buttons">
                     <button class="source-btn selected" data-source="mic">Microphone</button>
                     <button class="source-btn" data-source="noise">White Noise</button>
+                    <button class="source-btn" data-source="combined">Mic + Noise</button>
                 </div>
             </div>
 
@@ -448,7 +450,7 @@
                 </div>
             </div>
 
-            <!-- NEW: Auto-Loop Controls -->
+            <!-- Auto-Loop Controls -->
             <div class="control-group">
                 <label class="control-label">Auto-Loop Taps/Blocks</label>
                 <button class="toggle-btn" id="autoLoopBtn">
@@ -546,8 +548,9 @@
         let blockDuration = 0.5;
         let decayTime = 3;
         let invertPolarity = false;
-        let sourceType = 'mic'; // 'mic' or 'noise'
+        let sourceType = 'mic'; // 'mic', 'noise', or 'combined'
         let noiseNode = null;
+        let micNode = null;
         let scriptNode = null;
         let convolver = null;
         let gainNode = null;
@@ -650,8 +653,8 @@
             return impulse;
         }
 
-        // Setup audio source (mic or noise)
-        function setupSource() {
+        // Setup audio source (mic, noise, or combined)
+        async function setupSource() {
             if (sourceType === 'mic') {
                 return navigator.mediaDevices.getUserMedia({
                     audio: {
@@ -661,10 +664,10 @@
                     }
                 }).then(stream => {
                     mediaStream = stream;
-                    return audioContext.createMediaStreamSource(stream);
+                    micNode = audioContext.createMediaStreamSource(stream);
+                    return micNode;
                 });
-            } else {
-                // White noise source
+            } else if (sourceType === 'noise') {
                 return new Promise((resolve) => {
                     noiseNode = audioContext.createBufferSource();
                     noiseNode.buffer = createNoiseBuffer();
@@ -675,6 +678,41 @@
                     noiseGain.gain.value = 0.5; // Lower volume for comfort
                     noiseNode.connect(noiseGain);
                     resolve(noiseGain);
+                });
+            } else if (sourceType === 'combined') {
+                // Setup both microphone and white noise, then mix them
+                return navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }
+                }).then(stream => {
+                    mediaStream = stream;
+                    micNode = audioContext.createMediaStreamSource(stream);
+
+                    // Create white noise source
+                    noiseNode = audioContext.createBufferSource();
+                    noiseNode.buffer = createNoiseBuffer();
+                    noiseNode.loop = true;
+                    noiseNode.start(0);
+
+                    // Create gain nodes for both sources
+                    const micGain = audioContext.createGain();
+                    micGain.gain.value = 1.0;
+                    const noiseGain = audioContext.createGain();
+                    noiseGain.gain.value = 0.5; // Lower volume for noise
+
+                    // Connect sources to their gain nodes
+                    micNode.connect(micGain);
+                    noiseNode.connect(noiseGain);
+
+                    // Create a mixer to combine both sources
+                    const mixer = audioContext.createChannelMerger(1);
+                    micGain.connect(mixer, 0, 0);
+                    noiseGain.connect(mixer, 0, 0);
+
+                    return mixer;
                 });
             }
         }
@@ -893,6 +931,11 @@
                 noiseNode.stop();
                 noiseNode.disconnect();
                 noiseNode = null;
+            }
+
+            if (micNode) {
+                micNode.disconnect();
+                micNode = null;
             }
 
             if (scriptNode) {
