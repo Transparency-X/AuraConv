@@ -124,6 +124,12 @@
             gap: 10px;
         }
 
+        .polarity-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
         .auto-loop-controls {
             display: grid;
             grid-template-columns: 1fr;
@@ -141,7 +147,7 @@
             gap: 10px;
         }
 
-        button {
+        button, select {
             background: #1a1a1a;
             border: 1px solid #333;
             color: #fff;
@@ -154,7 +160,21 @@
             touch-action: manipulation;
         }
 
-        button:hover {
+        select {
+            padding: 12px 15px;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            background-size: 12px;
+        }
+
+        select:focus, button:focus {
+            outline: none;
+            border-color: #555;
+        }
+
+        button:hover, select:hover {
             background: #222;
             border-color: #444;
         }
@@ -397,11 +417,26 @@
             50% { opacity: 0.5; transform: scale(1.2); }
         }
 
+        .polarity-info {
+            margin-top: 15px;
+            padding: 12px;
+            background: #0a0a0a;
+            border-radius: 8px;
+            border: 1px solid #222;
+        }
+
+        .polarity-info p {
+            font-size: 0.8rem;
+            color: #666;
+            line-height: 1.4;
+        }
+
         @media (max-width: 380px) {
             h1 { font-size: 2rem; }
             .interval-buttons { grid-template-columns: 1fr 1fr; }
             .source-buttons { grid-template-columns: 1fr; }
             .auto-loop-row { grid-template-columns: 1fr; }
+            .polarity-buttons { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -432,6 +467,24 @@
             </div>
 
             <div class="control-group">
+                <label class="control-label">Polarity Inversion</label>
+                <select id="polarityInversion">
+                    <option value="none">Neither</option>
+                    <option value="mic">Microphone Only</option>
+                    <option value="noise">White Noise Only</option>
+                    <option value="both">Both</option>
+                </select>
+                <div class="polarity-info">
+                    <p>
+                        <strong style="color: #888;">Neither:</strong> No polarity inversion<br>
+                        <strong style="color: #3b82f6;">Mic Only:</strong> Invert microphone signal<br>
+                        <strong style="color: #8b5cf6;">Noise Only:</strong> Invert white noise signal<br>
+                        <strong style="color: #10b981;">Both:</strong> Invert both signals
+                    </p>
+                </div>
+            </div>
+
+            <div class="control-group">
                 <label class="control-label">Block Interval (samples)</label>
                 <div class="interval-buttons">
                     <button class="interval-btn selected" data-value="50">50</button>
@@ -447,6 +500,16 @@
                 <label class="control-label">Block Duration: <span id="durationValue">50</span>%</label>
                 <div class="slider-container">
                     <input type="range" id="durationSlider" min="10" max="90" value="50">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">Block Processing Mode</label>
+                <button class="toggle-btn" id="invertBlockingBtn">
+                    Invert Blocking Polarity
+                </button>
+                <div class="mode-indicator" id="modeIndicator">
+                    Mode: Block Intervals (Silence Gaps)
                 </div>
             </div>
 
@@ -484,23 +547,6 @@
                         <div class="pulse-dot"></div>
                         <span id="currentTapsValue">Current: 1000 taps</span>
                     </div>
-                </div>
-            </div>
-
-            <div class="control-group">
-                <div class="mode-indicator" id="modeIndicator">
-                    Mode: Block Intervals (Silence Gaps)
-                </div>
-
-                <button class="toggle-btn" id="invertPolarityBtn">
-                    Invert Blocking Polarity
-                </button>
-
-                <div style="margin-top: 15px; padding: 12px; background: #0a0a0a; border-radius: 8px; border: 1px solid #222;">
-                    <p style="font-size: 0.8rem; color: #666; line-height: 1.4;">
-                        <strong style="color: #888;">OFF:</strong> Block out intervals (normal gaps)<br>
-                        <strong style="color: #f5576c;">ON:</strong> Pass only intervals (chopped bursts)
-                    </p>
                 </div>
             </div>
 
@@ -547,8 +593,9 @@
         let blockInterval = 50;
         let blockDuration = 0.5;
         let decayTime = 3;
-        let invertPolarity = false;
+        let invertBlocking = false;
         let sourceType = 'mic'; // 'mic', 'noise', or 'combined'
+        let polarityInversion = 'none'; // 'none', 'mic', 'noise', 'both'
         let noiseNode = null;
         let micNode = null;
         let scriptNode = null;
@@ -579,7 +626,7 @@
         const durationSlider = document.getElementById('durationSlider');
         const durationValue = document.getElementById('durationValue');
         const decaySlider = document.getElementById('decaySlider');
-        const invertPolarityBtn = document.getElementById('invertPolarityBtn');
+        const invertBlockingBtn = document.getElementById('invertBlockingBtn');
         const modeIndicator = document.getElementById('modeIndicator');
         const rotationBtn = document.getElementById('rotationBtn');
         const rateSlider = document.getElementById('rateSlider');
@@ -587,6 +634,9 @@
         const rateContainer = document.getElementById('rateContainer');
         const rotationVisual = document.getElementById('rotationVisual');
         const rotationDot = document.getElementById('rotationDot');
+
+        // Polarity inversion UI
+        const polarityInversionSelect = document.getElementById('polarityInversion');
 
         // Auto-loop UI elements
         const autoLoopBtn = document.getElementById('autoLoopBtn');
@@ -653,8 +703,12 @@
             return impulse;
         }
 
-        // Setup audio source (mic, noise, or combined)
+        // Setup audio source (mic, noise, or combined) with polarity inversion
         async function setupSource() {
+            // Determine which sources need polarity inversion
+            const invertMic = (polarityInversion === 'mic' || polarityInversion === 'both');
+            const invertNoise = (polarityInversion === 'noise' || polarityInversion === 'both');
+
             if (sourceType === 'mic') {
                 return navigator.mediaDevices.getUserMedia({
                     audio: {
@@ -665,6 +719,14 @@
                 }).then(stream => {
                     mediaStream = stream;
                     micNode = audioContext.createMediaStreamSource(stream);
+
+                    // Apply polarity inversion if needed
+                    if (invertMic) {
+                        const invertGain = audioContext.createGain();
+                        invertGain.gain.value = -1;
+                        micNode.connect(invertGain);
+                        return invertGain;
+                    }
                     return micNode;
                 });
             } else if (sourceType === 'noise') {
@@ -673,11 +735,22 @@
                     noiseNode.buffer = createNoiseBuffer();
                     noiseNode.loop = true;
                     noiseNode.start(0);
+
                     // Create a gain node to control noise volume
                     const noiseGain = audioContext.createGain();
                     noiseGain.gain.value = 0.5; // Lower volume for comfort
-                    noiseNode.connect(noiseGain);
-                    resolve(noiseGain);
+
+                    // Apply polarity inversion if needed
+                    if (invertNoise) {
+                        const invertGain = audioContext.createGain();
+                        invertGain.gain.value = -1;
+                        noiseNode.connect(invertGain);
+                        invertGain.connect(noiseGain);
+                        resolve(noiseGain);
+                    } else {
+                        noiseNode.connect(noiseGain);
+                        resolve(noiseGain);
+                    }
                 });
             } else if (sourceType === 'combined') {
                 // Setup both microphone and white noise, then mix them
@@ -703,9 +776,27 @@
                     const noiseGain = audioContext.createGain();
                     noiseGain.gain.value = 0.5; // Lower volume for noise
 
+                    // Apply polarity inversion
+                    let finalMicNode = micNode;
+                    let finalNoiseNode = noiseNode;
+
+                    if (invertMic) {
+                        const invertGain = audioContext.createGain();
+                        invertGain.gain.value = -1;
+                        micNode.connect(invertGain);
+                        finalMicNode = invertGain;
+                    }
+
+                    if (invertNoise) {
+                        const invertGain = audioContext.createGain();
+                        invertGain.gain.value = -1;
+                        noiseNode.connect(invertGain);
+                        finalNoiseNode = invertGain;
+                    }
+
                     // Connect sources to their gain nodes
-                    micNode.connect(micGain);
-                    noiseNode.connect(noiseGain);
+                    finalMicNode.connect(micGain);
+                    finalNoiseNode.connect(noiseGain);
 
                     // Create a mixer to combine both sources
                     const mixer = audioContext.createChannelMerger(1);
@@ -738,7 +829,7 @@
                     const isInBlockZone = positionInInterval < blockLength;
 
                     let shouldMute;
-                    if (invertPolarity) {
+                    if (invertBlocking) {
                         shouldMute = !isInBlockZone;
                     } else {
                         shouldMute = isInBlockZone;
@@ -830,23 +921,40 @@
             let barHeight;
             let x = 0;
 
-            for(let i = 0; i < bufferLength; i++) {
-                barHeight = dataArray[i] / 255 * canvas.height;
-
-                const gradient = canvasCtx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
-                if (invertPolarity) {
-                    gradient.addColorStop(0, '#f5576c');
-                    gradient.addColorStop(1, '#f093fb');
-                } else if (rotationEnabled) {
-                    gradient.addColorStop(0, '#10b981');
-                    gradient.addColorStop(1, '#059669');
-                } else if (autoLoopEnabled) {
-                    gradient.addColorStop(0, '#3b82f6');
-                    gradient.addColorStop(1, '#1d4ed8');
-                } else {
+            // Determine visualization color based on active features
+            let gradient;
+            if (invertBlocking) {
+                gradient = canvasCtx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
+                gradient.addColorStop(0, '#f5576c');
+                gradient.addColorStop(1, '#f093fb');
+            } else if (rotationEnabled) {
+                gradient = canvasCtx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
+                gradient.addColorStop(0, '#10b981');
+                gradient.addColorStop(1, '#059669');
+            } else if (autoLoopEnabled) {
+                gradient = canvasCtx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
+                gradient.addColorStop(0, '#3b82f6');
+                gradient.addColorStop(1, '#1d4ed8');
+            } else {
+                // Default gradient based on polarity inversion
+                gradient = canvasCtx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
+                if (polarityInversion === 'none') {
                     gradient.addColorStop(0, '#667eea');
                     gradient.addColorStop(1, '#764ba2');
+                } else if (polarityInversion === 'mic') {
+                    gradient.addColorStop(0, '#3b82f6');
+                    gradient.addColorStop(1, '#2563eb');
+                } else if (polarityInversion === 'noise') {
+                    gradient.addColorStop(0, '#8b5cf6');
+                    gradient.addColorStop(1, '#7c3aed');
+                } else if (polarityInversion === 'both') {
+                    gradient.addColorStop(0, '#10b981');
+                    gradient.addColorStop(1, '#059669');
                 }
+            }
+
+            for(let i = 0; i < bufferLength; i++) {
+                barHeight = dataArray[i] / 255 * canvas.height;
 
                 canvasCtx.fillStyle = gradient;
                 canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
@@ -983,6 +1091,16 @@
             });
         });
 
+        // Polarity inversion selection
+        polarityInversionSelect.addEventListener('change', (e) => {
+            polarityInversion = e.target.value;
+            if (isRunning) {
+                // Restart audio to apply polarity changes
+                stopAudio();
+                setTimeout(() => startAudio(), 100);
+            }
+        });
+
         document.querySelectorAll('.interval-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 document.querySelectorAll('.interval-btn').forEach(b => b.classList.remove('selected'));
@@ -1006,11 +1124,11 @@
             }
         });
 
-        invertPolarityBtn.addEventListener('click', () => {
-            invertPolarity = !invertPolarity;
-            invertPolarityBtn.classList.toggle('active');
+        invertBlockingBtn.addEventListener('click', () => {
+            invertBlocking = !invertBlocking;
+            invertBlockingBtn.classList.toggle('active');
 
-            if (invertPolarity) {
+            if (invertBlocking) {
                 modeIndicator.textContent = 'Mode: Pass Intervals (Chopped Bursts)';
                 modeIndicator.classList.add('inverted');
             } else {
