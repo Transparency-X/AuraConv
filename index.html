@@ -70,6 +70,23 @@
             color: #777;
             margin-top: 5px;
         }
+        .lfo-visualizer {
+            height: 20px;
+            background: linear-gradient(to right, #2ecc71, #3498db, #2ecc71);
+            border-radius: 10px;
+            margin: 10px 0;
+            position: relative;
+            overflow: hidden;
+        }
+        .lfo-indicator {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 2px;
+            background: #e74c3c;
+            border-radius: 1px;
+        }
         select, button {
             width: 100%;
             padding: 10px;
@@ -117,6 +134,16 @@
             grid-template-columns: 1fr 1fr;
             gap: 20px;
         }
+        .current-taps-display {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #2c3e50;
+            text-align: center;
+            padding: 10px;
+            background-color: #ecf0f1;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
         @media (max-width: 600px) {
             .grid-2 {
                 grid-template-columns: 1fr;
@@ -159,6 +186,12 @@
                     <input type="range" id="lfoRate" min="0.1" max="10" value="2" step="0.1">
                     <div class="value-display" id="lfoRateValue">2.0 seconds</div>
                 </div>
+            </div>
+            <div class="lfo-visualizer" id="lfoVisualizer">
+                <div class="lfo-indicator" id="lfoIndicator"></div>
+            </div>
+            <div class="current-taps-display" id="currentTapsDisplay">
+                Current Taps: 1000
             </div>
         </div>
 
@@ -203,14 +236,7 @@
         let isAudioRunning = false;
         let lfoPhase = 0;
         let lastLfoUpdate = 0;
-        let lfoSize = 1000; // Current LFO-modulated filter size
-
-        // Buffer and state for the convolution
-        const MAX_TAPS = 5000;
-        let buffer = new Float32Array(MAX_TAPS);
-        let bufferPos = 0;
-        let sum = 0;
-        let currentSize = 1000;
+        let currentLfoSize = 1000;
 
         // DOM elements
         const toggleAudioBtn = document.getElementById('toggleAudio');
@@ -224,6 +250,12 @@
         const lfoRateValue = document.getElementById('lfoRateValue');
         const inputSourceSelect = document.getElementById('inputSource');
         const polarityInversionSelect = document.getElementById('polarityInversion');
+        const lfoVisualizer = document.getElementById('lfoVisualizer');
+        const lfoIndicator = document.getElementById('lfoIndicator');
+        const currentTapsDisplay = document.getElementById('currentTapsDisplay');
+
+        // LFO visualization
+        let lfoAnimationId = null;
 
         // Register AudioWorklet processor
         async function registerProcessor() {
@@ -235,13 +267,18 @@
                 class AuraConvProcessor extends AudioWorkletProcessor {
                     constructor() {
                         super();
-                        this.buffer = new Float32Array(${MAX_TAPS});
+                        this.buffer = new Float32Array(5000);
                         this.bufferPos = 0;
                         this.sum = 0;
                         this.currentSize = 1000;
                         this.lastSize = 1000;
                         this.lfoPhase = 0;
                         this.lastTime = 0;
+                        this.gain = 0.15;
+                        this.lfoEnabled = false;
+                        this.lfoRate = 2.0;
+                        this.inputSource = 'white';
+                        this.polarityInversion = 'none';
                         this.port.onmessage = (e) => {
                             if (e.data.type === 'params') {
                                 this.currentSize = e.data.filterLength;
@@ -277,10 +314,19 @@
                         if (this.currentSize !== this.lastSize) {
                             this.sum = 0;
                             for (let i = 0; i < this.currentSize; i++) {
-                                const idx = (this.bufferPos - i + ${MAX_TAPS}) % ${MAX_TAPS};
+                                const idx = (this.bufferPos - i + 5000) % 5000;
                                 this.sum += this.buffer[idx];
                             }
                             this.lastSize = this.currentSize;
+                        }
+
+                        // Send current size to main thread for visualization
+                        if (this.lfoEnabled && now - this.lastTime < 0.1) {
+                            this.port.postMessage({
+                                type: 'currentSize',
+                                size: this.currentSize,
+                                phase: this.lfoPhase
+                            });
                         }
 
                         for (let i = 0; i < output[0].length; i++) {
@@ -323,7 +369,7 @@
                             this.sum -= this.buffer[this.bufferPos];
                             this.buffer[this.bufferPos] = inputSample;
                             this.sum += inputSample;
-                            this.bufferPos = (this.bufferPos + 1) % ${MAX_TAPS};
+                            this.bufferPos = (this.bufferPos + 1) % 5000;
 
                             const filtered = (this.sum / this.currentSize) * this.gain;
 
@@ -361,6 +407,15 @@
                 // Set default gain
                 outputGainNode.gain.value = parseFloat(outputGainSlider.value);
 
+                // Listen for messages from AudioWorklet
+                auraConvNode.port.onmessage = (e) => {
+                    if (e.data.type === 'currentSize') {
+                        currentLfoSize = e.data.size;
+                        currentTapsDisplay.textContent = `Current Taps: ${currentLfoSize}`;
+                        updateLfoVisualizer(e.data.phase);
+                    }
+                };
+
                 // Update processor parameters
                 updateProcessorParams();
 
@@ -369,10 +424,31 @@
 
                 isAudioRunning = true;
                 updateUIState();
+                startLfoVisualization();
             } catch (err) {
                 console.error("Error initializing audio:", err);
                 audioStatus.textContent = "Error: " + err.message;
                 audioStatus.className = "status inactive";
+            }
+        }
+
+        // Update LFO visualizer
+        function updateLfoVisualizer(phase) {
+            const percent = phase * 100;
+            lfoIndicator.style.left = `${percent}%`;
+        }
+
+        // Start LFO visualization animation
+        function startLfoVisualization() {
+            if (lfoAnimationId) {
+                cancelAnimationFrame(lfoAnimationId);
+            }
+            lfoAnimationId = requestAnimationFrame(animateLfoVisualizer);
+        }
+
+        function animateLfoVisualizer() {
+            if (isAudioRunning && lfoEnabledSelect.value === '1') {
+                lfoAnimationId = requestAnimationFrame(animateLfoVisualizer);
             }
         }
 
@@ -463,6 +539,10 @@
                     outputGainNode.disconnect();
                     outputGainNode = null;
                 }
+                if (lfoAnimationId) {
+                    cancelAnimationFrame(lfoAnimationId);
+                    lfoAnimationId = null;
+                }
                 isAudioRunning = false;
                 updateUIState();
             }
@@ -498,6 +578,7 @@
         filterLengthValue.textContent = `${filterLengthSlider.value} taps`;
         outputGainValue.textContent = outputGainSlider.value;
         lfoRateValue.textContent = `${lfoRateSlider.value} seconds`;
+        currentTapsDisplay.textContent = `Current Taps: ${currentLfoSize}`;
     </script>
 </body>
 </html>
