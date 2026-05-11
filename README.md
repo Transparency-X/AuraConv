@@ -1,5 +1,6 @@
 # **AuraConv: Real-Time Convolution Filter with Dynamic Sample Processing** 🎵
 
+![AuraConv Logo](https://img.icons8.com/ios/50/000000/waves.png)
 *Real-time audio convolution and sample manipulation in your browser*
 
 ---
@@ -28,17 +29,18 @@ Whether you're a **sound designer, musician, or audio experimenter**, AuraConv o
 ### **🎚️ Sample Processing**
 | Feature | Description | Range |
 |---------|-------------|-------|
-| **Block Samples** | Number of audio samples per processing block | 50–2000 samples |
+| **Block Samples** | Number of audio samples per processing block | **50–10,000 samples** |
 | **Block Duration** | Percentage of each block to process (mute or pass) | 10–90% |
 | **Invert Blocking Polarity** | Toggle between muting or passing the selected block portion | On/Off |
-| **Auto-Loop Samples** | Automatically modulate block size between min/max in a triangle wave | Min: 50–2000, Max: 50–2000, Loop Time: 0.5–10s |
+| **Auto-Loop Samples** | Automatically modulate block size between min/max in a triangle wave | Min: 50–10,000, Max: 50–10,000, Loop Time: 0.5–10s |
 
 ---
+
 ### **🌈 Colored Noise Types**
 | **Noise Color** | **Spectral Characteristic** | **Sound Character** | **Common Uses** |
 |-----------------|-----------------------------|---------------------|-----------------|
 | **White** | Flat spectrum (equal energy per Hz) | Harsh, static-like | General sound design, masking |
-| **Pink** | Equal energy per octave (1/f) | Balanced, natural | Relaxation, nature sounds |
+| **Pink** | Equal energy per octave (1/f) | Balanced, natural | Relaxation, ambient |
 | **Brown/Red** | 1/f² (more low-frequency energy) | Deep, rumbling | Sub-bass, textures |
 | **Blue** | 1/f^(1/2) (more high-frequency energy) | Bright, hissing | Sparkle, air |
 | **Purple/Violet** | 1/f^(2/3) (even more high-frequency) | Very bright, crisp | Digital, futuristic |
@@ -50,11 +52,11 @@ Whether you're a **sound designer, musician, or audio experimenter**, AuraConv o
 
 ---
 ### **⚡ Polarity Control**
-| Option | Microphone | White Noise | Use Case |
-|--------|------------|-------------|----------|
+| Option | Microphone | Noise | Use Case |
+|--------|------------|-------|----------|
 | **Neither** | Normal | Normal | Standard processing |
 | **Microphone Only** | ✅ Inverted | Normal | Isolate mic phase effects |
-| **White Noise Only** | Normal | ✅ Inverted | Isolate noise phase effects |
+| **Noise Only** | Normal | ✅ Inverted | Isolate noise phase effects |
 | **Both** | ✅ Inverted | ✅ Inverted | Full phase cancellation/experimentation |
 
 ---
@@ -69,10 +71,12 @@ Whether you're a **sound designer, musician, or audio experimenter**, AuraConv o
 - **Save** your current configuration as a named preset
 - **Load** presets to instantly apply all settings
 - **Delete** custom presets you no longer need
-- **3 Default Presets** included (cannot be deleted):
+- **5 Default Presets** included (cannot be deleted):
   - **Evolving Atmosphere** – Dynamic, shifting soundscapes
   - **Phase-Swept Drone** – Rich, phase-modulated textures
   - **Spatial Noise Cloud** – 3D immersive noise
+  - **Deep Sub-Bass Modulation** – Ultra-low frequency effects
+  - **Extreme Slow Motion** – Very slow, tidal modulation
 - **Persistent Storage** – Presets saved to browser’s localStorage
 
 ---
@@ -134,7 +138,6 @@ The audio signal flows through these stages **in this exact order**:
 | **Custom Impulse Responses** | Upload your own IR files for reverb | ⭐⭐ |
 | **Multi-Channel Processing** | Stereo/multi-channel support | ⭐⭐ |
 | **Plugin Format (VST3/AU)** | Use AuraConv in DAWs | ⭐⭐ |
-| **Audio Units for iOS** | iOS/macOS integration | ⭐⭐ |
 
 ---
 ### **💡 Experimental (Future Exploration)**
@@ -160,15 +163,16 @@ The audio signal flows through these stages **in this exact order**:
 
 ---
 ### **🎧 Browser Compatibility**
-| Browser | AudioWorklet | Microphone Access | Auto-Loop | 3D Rotation | Presets |
-|---------|---------------|-------------------|-----------|-------------|---------|
-| Chrome | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Firefox | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Edge | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Safari | ⚠️ Partial | ✅ | ✅ | ⚠️ Limited | ✅ |
-| Mobile Chrome | ✅ | ✅ | ✅ | ⚠️ Varies | ✅ |
+| Browser | AudioWorklet | Microphone Access | Auto-Loop | 3D Rotation | Presets | Background Playback |
+|---------|---------------|-------------------|-----------|-------------|---------|-------------------|
+| Chrome | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ Limited (10-30s) |
+| Firefox | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ Limited (~1min) |
+| Edge | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ Limited (10-30s) |
+| Safari | ⚠️ Partial | ✅ | ✅ | ⚠️ Limited | ✅ | ❌ No |
+| Mobile Chrome | ✅ | ✅ | ✅ | ⚠️ Varies | ✅ | ❌ No |
+| Mobile Firefox | ✅ | ✅ | ✅ | ⚠️ Varies | ✅ | ⚠️ Limited (~1min) |
 
-*⚠️ Safari and mobile browsers may have limited AudioWorklet support.*
+*⚠️ Background playback is limited on mobile browsers to save battery. See [FAQ](#faq) for workarounds.*
 
 ---
 ---
@@ -192,7 +196,6 @@ cd auraconv-filter
 ### **🐛 Reporting Issues**
 - **Bugs?** [Open an issue](https://github.com/your-username/auraconv-filter/issues)
 - **Feature Requests?** [Start a discussion](https://github.com/your-username/auraconv-filter/discussions)
-- **Questions?** Check the [FAQ](#faq) below
 
 ---
 ---
@@ -201,56 +204,43 @@ cd auraconv-filter
 ---
 ### **🔊 Audio Processing**
 #### **Q: What does "Block Samples" mean?**
-A: It defines the **size of each processing block** in audio samples. A higher value = larger chunks of audio processed together, creating smoother but less rhythmic effects.
+A: It defines the **size of each processing block** in audio samples. Larger values create **slower, deeper modulation effects**:
+- **50-200 samples:** Fast, high-frequency effects (shimmer, flutter)
+- **500-1000 samples:** Mid-frequency effects (wah, chopping)
+- **2000-5000 samples:** Slow, deep modulation (pulsing, breathing)
+- **10,000 samples:** **Extreme slow modulation** (tidal, slow motion)
 
-#### **Q: How does Block Duration (50%) work?**
+#### **Q: How different are 5k and 10k from 1k/2k?**
+| **Block Size** | **Fundamental Frequency** | **Notch Spacing** | **Gap Length (50%)** | **Effect** |
+|----------------|---------------------------|-------------------|------------------------|------------|
+| 1000 | 44.1 Hz | 44.1 Hz | 11.35ms | Slow pulsing |
+| 2000 | 22.05 Hz | 22.05 Hz | 22.7ms | Very slow pulsing |
+| **5000** | **8.82 Hz** | **8.82 Hz** | **56.8ms** | **Deep sub-bass modulation** |
+| **10000** | **4.41 Hz** | **4.41 Hz** | **113.5ms** | **Extreme slow motion** |
+
+- **5000 samples:** Very deep, sub-bass modulation (like ocean waves)
+- **10000 samples:** Ultra-slow, tidal effects (below typical hearing range but effective for modulation)
+
+#### **Q: What does Block Duration (50%) mean?**
 A: It determines **what percentage of each block is affected** by the blocking/muting:
-- **50% =** First half of each block is processed
-- **10% =** Only the first 10% is affected (short bursts)
-- **90% =** First 90% is affected (long silences)
+- **50% =** First half of each block is processed (muted or passed)
+- **Depth:** ~20-30 dB notches at 50% (clearly audible comb filter effect)
 
 #### **Q: What does Invert Blocking Polarity do?**
 A: It **swaps** which part of the block is processed:
 - **OFF:** First X% of block is **muted** (silence gaps)
 - **ON:** First X% of block is **passed** (chopped bursts)
 
-#### **Q: How does Auto-Loop interact with Block Samples?**
-A: Auto-Loop **modulates the Block Samples value** between your min/max settings in a **triangle wave pattern** (min → max → min). The Block Duration percentage is then applied to this **dynamic block size**.
-
 ---
 ### **🎛️ Feature Interactions**
 #### **Q: Are all options available with Auto-Loop selected?**
-✅ **Yes!** All features work **independently** with Auto-Loop enabled.
-- Auto-Loop **only modulates the block size** (samples)
-- You can still:
-  - Switch audio sources (mic/noise/combined)
-  - Apply polarity inversion
-  - Adjust block duration
-  - Toggle blocking polarity
-  - Enable rotation
-  - Adjust reverb decay
+✅ **Yes!** All features work **independently** with Auto-Loop enabled. Auto-Loop **only modulates the block size** (samples) between your min/max settings.
 
 #### **Q: Should "Invert Blocking Polarity" be available with Auto-Loop?**
 ✅ **Yes, and it should remain an option.**
 - **Auto-Loop** controls **WHAT** (block size)
 - **Invert Blocking Polarity** controls **HOW** (mute or pass the block portion)
 - They are **orthogonal** (independent) features that can create **evolving rhythmic patterns**
-
-#### **Q: What is the impact of Block Duration: 50% and Convolution Reverb Decay Time?**
-| **Parameter** | **What It Does** | **Impact** | **Example** |
-|---------------|------------------|------------|-------------|
-| **Block Duration: 50%** | Defines **which portion** of each block is processed (muted or passed) | - **50% =** First 50% of samples in each block are affected <br> - Creates rhythmic **silence gaps** or **chopped bursts** | Block Size = 100 samples, Duration = 50% → **First 50 samples muted/passed** |
-| **Reverb Decay Time: 3s** | Controls **how long** the reverb tail lasts | - **1s =** Short, tight reverb <br> - **10s =** Long, washy reverb <br> - Applied **after** all other processing | Higher decay = more sustained, ambient effect |
-
-#### **Q: What is the order of processing?**
-A: The signal flow is:
-1. **Audio Source Selection**
-2. **Polarity Inversion** (per source)
-3. **Auto-Loop Noise Colors** (if enabled)
-4. **Auto-Loop Block Samples** (if enabled)
-5. **Block Processing** (size + duration + polarity)
-6. **Circular Rotation** (3D spatial)
-7. **Convolution Reverb**
 
 ---
 ### **💻 Technical**
@@ -269,6 +259,17 @@ A: While presets are saved locally, you can **export/import** them by:
 2. Going to **Application > Local Storage**
 3. Copying the `auraconv-presets` value (JSON)
 4. Sharing this with others (they can import via the same method)
+
+#### **Q: Why does audio stop when the app is in the background?**
+A: **Browser limitations** – Mobile/Chrome **throttle or pause** JavaScript execution when:
+- App is **backgrounded** (switched to another app)
+- Tab is **not visible** (switched to another tab)
+
+**Workarounds:**
+- **Desktop:** No issue – Chrome/Firefox/Edge **do not throttle** background audio
+- **Android:** Disable battery optimization for Chrome, use Firefox, or keep tab in split-screen
+- **iOS:** Use Chrome/Firefox (Safari has strict background limits)
+- **General:** The app **detects when it returns to focus** and shows a warning to resume
 
 ---
 ---
