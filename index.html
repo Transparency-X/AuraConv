@@ -468,6 +468,9 @@
 
         <div class="warning" id="warning">
             Please allow microphone access to use this app.
+            <div style="margin-top: 8px; font-size: 0.85rem; opacity: 0.8;">
+                ⚠️ On mobile, audio may pause when the app is in the background.
+            </div>
         </div>
 
         <div class="visualizer">
@@ -480,7 +483,7 @@
             <div class="control-group">
                 <label class="control-label">Presets</label>
                 <div class="preset-info">
-                    <p>Load, save, and manage preset configurations</p>
+                    <p>Load, save, and manage preset configurations. Default presets cannot be deleted.</p>
                 </div>
                 <div class="preset-controls">
                     <select id="presetSelect">
@@ -541,14 +544,14 @@
                 <select id="polarityInversion">
                     <option value="none">Neither</option>
                     <option value="mic">Microphone Only</option>
-                    <option value="noise">White Noise Only</option>
+                    <option value="noise">Noise Only</option>
                     <option value="both">Both</option>
                 </select>
                 <div class="polarity-info">
                     <p>
                         <strong style="color: #888;">Neither:</strong> No polarity inversion<br>
                         <strong style="color: #3b82f6;">Mic Only:</strong> Invert microphone signal<br>
-                        <strong style="color: #8b5cf6;">Noise Only:</strong> Invert white noise signal<br>
+                        <strong style="color: #8b5cf6;">Noise Only:</strong> Invert noise signal<br>
                         <strong style="color: #10b981;">Both:</strong> Invert both signals
                     </p>
                 </div>
@@ -557,15 +560,17 @@
             <div class="control-group">
                 <label class="control-label">Block Samples</label>
                 <div class="block-info">
-                    <p>Set the number of audio samples per processing block</p>
+                    <p>Set the number of audio samples per processing block (50-10,000)</p>
                 </div>
                 <div class="interval-buttons">
                     <button class="interval-btn selected" data-value="50">50</button>
                     <button class="interval-btn" data-value="100">100</button>
                     <button class="interval-btn" data-value="200">200</button>
                     <button class="interval-btn" data-value="500">500</button>
-                    <button class="interval-btn" data-value="1000">1000</button>
-                    <button class="interval-btn" data-value="2000">2000</button>
+                    <button class="interval-btn" data-value="1000">1k</button>
+                    <button class="interval-btn" data-value="2000">2k</button>
+                    <button class="interval-btn" data-value="5000">5k</button>
+                    <button class="interval-btn" data-value="10000">10k</button>
                 </div>
             </div>
 
@@ -600,15 +605,15 @@
                         <div class="slider-container">
                             <div class="slider-row">
                                 <span class="slider-label">Min (samples):</span>
-                                <input type="range" id="autoLoopMin" min="50" max="2000" value="50" step="50">
+                                <input type="range" id="autoLoopMin" min="50" max="10000" value="50" step="50">
                                 <span id="autoLoopMinValue">50</span>
                             </div>
                         </div>
                         <div class="slider-container">
                             <div class="slider-row">
                                 <span class="slider-label">Max (samples):</span>
-                                <input type="range" id="autoLoopMax" min="50" max="2000" value="2000" step="50">
-                                <span id="autoLoopMaxValue">2000</span>
+                                <input type="range" id="autoLoopMax" min="50" max="10000" value="10000" step="50">
+                                <span id="autoLoopMaxValue">10000</span>
                             </div>
                         </div>
                     </div>
@@ -648,7 +653,7 @@
             <div class="control-group">
                 <label class="control-label">Convolution Reverb</label>
                 <div class="slider-container">
-                    <label class="control-label">Decay Time</label>
+                    <label class="control-label">Decay Time (s): <span id="decayValue">3.0</span></label>
                     <input type="range" id="decaySlider" min="1" max="10" value="3" step="0.1">
                 </div>
             </div>
@@ -663,6 +668,7 @@
     </div>
 
     <script>
+        // ========== STATE VARIABLES ==========
         let audioContext = null;
         let mediaStream = null;
         let isRunning = false;
@@ -670,8 +676,8 @@
         let blockDuration = 0.5;
         let decayTime = 3;
         let invertBlocking = false;
-        let sourceType = 'mic'; // 'mic', 'noise', or 'combined'
-        let polarityInversion = 'none'; // 'none', 'mic', 'noise', 'both'
+        let sourceType = 'mic';
+        let polarityInversion = 'none';
         let noiseNode = null;
         let micNode = null;
         let scriptNode = null;
@@ -680,6 +686,7 @@
         let analyser = null;
         let pannerNode = null;
         let sampleCounter = 0;
+        let wasRunningBeforeBlur = false;
 
         // Noise color variables
         let noiseColor = 'white';
@@ -688,7 +695,7 @@
         let noiseColorStartTime = 0;
         const noiseColors = ['white', 'pink', 'brown', 'blue', 'purple', 'green', 'grey', 'black'];
 
-        // Noise generator state (for algorithms that need memory)
+        // Noise generator state
         let noiseGeneratorState = {
             pink: { values: [], index: 0 },
             brown: { lastValue: 0 },
@@ -701,14 +708,14 @@
         // Auto-loop variables (for block samples)
         let autoLoopEnabled = false;
         let autoLoopMin = 50;
-        let autoLoopMax = 2000;
-        let autoLoopTime = 2.0; // seconds
+        let autoLoopMax = 10000;
+        let autoLoopTime = 2.0;
         let autoLoopStartTime = 0;
         let currentAutoLoopValue = 1000;
 
         // Rotation variables
         let rotationEnabled = false;
-        let rotationRate = 0.5; // Hz
+        let rotationRate = 0.5;
         let rotationStartTime = 0;
 
         // Preset system
@@ -741,7 +748,7 @@
                 blockSamples: 1000,
                 autoLoopEnabled: false,
                 autoLoopMin: 50,
-                autoLoopMax: 2000,
+                autoLoopMax: 10000,
                 autoLoopTime: 2,
                 blockDuration: 0.5,
                 invertBlocking: false,
@@ -759,7 +766,7 @@
                 blockSamples: 200,
                 autoLoopEnabled: false,
                 autoLoopMin: 50,
-                autoLoopMax: 2000,
+                autoLoopMax: 10000,
                 autoLoopTime: 2,
                 blockDuration: 0.3,
                 invertBlocking: true,
@@ -767,10 +774,46 @@
                 rotationEnabled: true,
                 rotationRate: 0.2,
                 decayTime: 8
+            },
+            {
+                name: "Deep Sub-Bass Modulation",
+                sourceType: 'noise',
+                noiseColor: 'brown',
+                autoLoopNoiseColors: false,
+                noiseColorLoopTime: 2,
+                blockSamples: 5000,
+                autoLoopEnabled: true,
+                autoLoopMin: 2000,
+                autoLoopMax: 10000,
+                autoLoopTime: 5,
+                blockDuration: 0.5,
+                invertBlocking: true,
+                polarityInversion: 'none',
+                rotationEnabled: false,
+                rotationRate: 0.5,
+                decayTime: 6
+            },
+            {
+                name: "Extreme Slow Motion",
+                sourceType: 'noise',
+                noiseColor: 'black',
+                autoLoopNoiseColors: true,
+                noiseColorLoopTime: 8,
+                blockSamples: 10000,
+                autoLoopEnabled: false,
+                autoLoopMin: 50,
+                autoLoopMax: 10000,
+                autoLoopTime: 2,
+                blockDuration: 0.7,
+                invertBlocking: false,
+                polarityInversion: 'none',
+                rotationEnabled: true,
+                rotationRate: 0.1,
+                decayTime: 10
             }
         ];
 
-        // DOM elements
+        // ========== DOM ELEMENTS ==========
         const canvas = document.getElementById('canvas');
         const canvasCtx = canvas.getContext('2d');
         const toggleBtn = document.getElementById('toggleBtn');
@@ -779,6 +822,7 @@
         const durationSlider = document.getElementById('durationSlider');
         const durationValue = document.getElementById('durationValue');
         const decaySlider = document.getElementById('decaySlider');
+        const decayValue = document.getElementById('decayValue');
         const invertBlockingBtn = document.getElementById('invertBlockingBtn');
         const modeIndicator = document.getElementById('modeIndicator');
         const rotationBtn = document.getElementById('rotationBtn');
@@ -817,30 +861,26 @@
         const autoLoopIndicator = document.getElementById('autoLoopIndicator');
         const currentSamplesValue = document.getElementById('currentSamplesValue');
 
-        // Resize canvas
+        // ========== INITIALIZATION ==========
+        function init() {
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            loadPresets();
+            updateAllUI();
+            setupEventListeners();
+
+            // Add background handling
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+            window.addEventListener('pagehide', handlePageHide);
+            window.addEventListener('pageshow', handlePageShow);
+        }
+
         function resizeCanvas() {
             canvas.width = canvas.offsetWidth;
             canvas.height = canvas.offsetHeight;
         }
-        resizeCanvas();
-        window.addEventListener('resize', resizeCanvas);
 
-        // Initialize noise generator state
-        function initNoiseGeneratorState() {
-            noiseGeneratorState = {
-                pink: {
-                    values: new Array(16).fill(0).map(() => Math.random() * 2 - 1),
-                    index: 0
-                },
-                brown: { lastValue: 0 },
-                blue: { lastValue: 0 },
-                purple: { lastValue: 0 },
-                green: { lastValue: 0 },
-                grey: { lastValue: 0 }
-            };
-        }
-
-        // Preset system functions
+        // ========== PRESET SYSTEM ==========
         function loadPresets() {
             const savedPresets = localStorage.getItem('auraconv-presets');
             if (savedPresets) {
@@ -875,7 +915,6 @@
 
             const preset = presets[index];
 
-            // Stop audio if running
             if (isRunning) {
                 stopAudio();
             }
@@ -897,10 +936,8 @@
             rotationRate = preset.rotationRate;
             decayTime = preset.decayTime;
 
-            // Update all UI elements to match preset
             updateAllUI();
 
-            // Restart audio if it was running
             if (isRunning) {
                 startAudio();
             }
@@ -950,104 +987,21 @@
             }
         }
 
-        // Update ALL UI elements to match current settings
-        function updateAllUI() {
-            // Update source buttons
-            document.querySelectorAll('.source-btn').forEach(btn => {
-                btn.classList.toggle('selected', btn.dataset.source === sourceType);
-            });
-
-            // Update noise color controls visibility
-            noiseColorControls.style.display = (sourceType === 'noise' || sourceType === 'combined') ? 'block' : 'none';
-
-            // Update noise color buttons
-            if (sourceType === 'noise' || sourceType === 'combined') {
-                document.querySelectorAll('.noise-color-btn').forEach(btn => {
-                    btn.classList.toggle('selected', btn.dataset.color === noiseColor);
-                });
-                autoLoopNoiseColorsBtn.classList.toggle('active', autoLoopNoiseColors);
-                autoLoopNoiseControls.style.display = autoLoopNoiseColors ? 'block' : 'none';
-                noiseColorLoopTimeSlider.value = noiseColorLoopTime;
-                noiseColorLoopTimeValue.textContent = noiseColorLoopTime.toFixed(1) + 's';
-            } else {
-                autoLoopNoiseControls.style.display = 'none';
-            }
-
-            // Update block samples buttons
-            document.querySelectorAll('.interval-btn').forEach(btn => {
-                btn.classList.toggle('selected', parseInt(btn.dataset.value) === blockSamples);
-            });
-
-            // Update block duration slider
-            durationSlider.value = blockDuration * 100;
-            durationValue.textContent = Math.round(blockDuration * 100);
-
-            // Update auto-loop controls
-            autoLoopBtn.classList.toggle('active', autoLoopEnabled);
-            autoLoopControls.style.display = autoLoopEnabled ? 'block' : 'none';
-            autoLoopMinSlider.value = autoLoopMin;
-            autoLoopMinValue.textContent = autoLoopMin;
-            autoLoopMaxSlider.value = autoLoopMax;
-            autoLoopMaxValue.textContent = autoLoopMax;
-            autoLoopTimeSlider.value = autoLoopTime;
-            autoLoopTimeValue.textContent = autoLoopTime.toFixed(1) + 's';
-
-            // Update polarity inversion
-            polarityInversionSelect.value = polarityInversion;
-
-            // Update block processing mode
-            invertBlockingBtn.classList.toggle('active', invertBlocking);
-            if (invertBlocking) {
-                modeIndicator.textContent = 'Mode: Pass Samples (Chopped Bursts)';
-                modeIndicator.classList.add('inverted');
-            } else {
-                modeIndicator.textContent = 'Mode: Block Samples (Silence Gaps)';
-                modeIndicator.classList.remove('inverted');
-            }
-
-            // Update rotation controls
-            rotationBtn.classList.toggle('active', rotationEnabled);
-            if (rotationEnabled) {
-                rateContainer.style.opacity = '1';
-                rateContainer.style.pointerEvents = 'auto';
-                rotationVisual.classList.add('active');
-                rotationDot.style.animation = `rotate ${1/rotationRate}s linear infinite`;
-            } else {
-                rateContainer.style.opacity = '0.5';
-                rateContainer.style.pointerEvents = 'none';
-                rotationVisual.classList.remove('active');
-                rotationDot.style.animation = 'none';
-            }
-            rateSlider.value = rotationRate;
-            rateValue.textContent = rotationRate.toFixed(1);
-
-            // Update reverb
-            decaySlider.value = decayTime;
-
-            // Update displays
-            updateAutoLoopDisplay();
-            updateNoiseColorDisplay();
+        // ========== NOISE GENERATION ==========
+        function initNoiseGeneratorState() {
+            noiseGeneratorState = {
+                pink: {
+                    values: new Array(16).fill(0).map(() => Math.random() * 2 - 1),
+                    index: 0
+                },
+                brown: { lastValue: 0 },
+                blue: { lastValue: 0 },
+                purple: { lastValue: 0 },
+                green: { lastValue: 0 },
+                grey: { lastValue: 0 }
+            };
         }
 
-        // Calculate current auto-loop value (for block samples)
-        function getCurrentAutoLoopValue() {
-            if (!autoLoopEnabled) return blockSamples;
-
-            const now = audioContext ? audioContext.currentTime : performance.now() / 1000;
-            const elapsed = now - autoLoopStartTime;
-            const normalizedTime = (elapsed % autoLoopTime) / autoLoopTime;
-
-            // Triangle wave: 0 -> 1 -> 0
-            const triangleWave = normalizedTime < 0.5 ?
-                normalizedTime * 2 :
-                (1 - normalizedTime) * 2;
-
-            // Map to min-max range
-            currentAutoLoopValue = Math.round(autoLoopMin + (autoLoopMax - autoLoopMin) * triangleWave);
-            return currentAutoLoopValue;
-        }
-
-        // Get current noise color (considering auto-loop)
         function getCurrentNoiseColor() {
             if (!autoLoopNoiseColors) return noiseColor;
 
@@ -1059,14 +1013,12 @@
             return noiseColors[index];
         }
 
-        // Generate a single noise sample based on color
         function generateNoiseSample(color) {
             switch(color) {
                 case 'white':
                     return Math.random() * 2 - 1;
 
                 case 'pink':
-                    // Voss-McCartney algorithm (1/f noise)
                     const pinkState = noiseGeneratorState.pink;
                     let sum = 0;
                     for (let j = 0; j < 16; j++) {
@@ -1079,40 +1031,34 @@
                     return sum / 16;
 
                 case 'brown':
-                    // Brownian noise (1/f² noise - random walk)
                     const brownState = noiseGeneratorState.brown;
                     brownState.lastValue += (Math.random() * 2 - 1) * 0.1;
                     brownState.lastValue = Math.max(-1, Math.min(1, brownState.lastValue));
                     return brownState.lastValue;
 
                 case 'blue':
-                    // Blue noise (1/f^(1/2) - more high frequency energy)
                     const blueState = noiseGeneratorState.blue;
                     blueState.lastValue = Math.random() * 2 - 1;
                     return blueState.lastValue * 1.5;
 
                 case 'purple':
-                    // Purple/Violet noise (1/f^(2/3) - even more high frequency)
                     const purpleState = noiseGeneratorState.purple;
                     purpleState.lastValue = Math.random() * 2 - 1;
                     return purpleState.lastValue * 2;
 
                 case 'green':
-                    // Green noise (mid-frequency emphasis)
                     const greenState = noiseGeneratorState.green;
                     const white = Math.random() * 2 - 1;
                     greenState.lastValue = (white + greenState.lastValue * 0.7) * 0.7;
                     return greenState.lastValue;
 
                 case 'grey':
-                    // Grey noise (psychoacoustically equal loudness)
                     const greyState = noiseGeneratorState.grey;
                     const whiteGrey = Math.random() * 2 - 1;
                     greyState.lastValue = (whiteGrey + greyState.lastValue * 0.9) * 0.5;
                     return greyState.lastValue;
 
                 case 'black':
-                    // Black noise (silence)
                     return 0;
 
                 default:
@@ -1120,7 +1066,22 @@
             }
         }
 
-        // Create impulse response for convolution
+        // ========== AUDIO PROCESSING ==========
+        function getCurrentAutoLoopValue() {
+            if (!autoLoopEnabled) return blockSamples;
+
+            const now = audioContext ? audioContext.currentTime : performance.now() / 1000;
+            const elapsed = now - autoLoopStartTime;
+            const normalizedTime = (elapsed % autoLoopTime) / autoLoopTime;
+
+            const triangleWave = normalizedTime < 0.5 ?
+                normalizedTime * 2 :
+                (1 - normalizedTime) * 2;
+
+            currentAutoLoopValue = Math.round(autoLoopMin + (autoLoopMax - autoLoopMin) * triangleWave);
+            return currentAutoLoopValue;
+        }
+
         function createImpulseResponse(duration) {
             const sampleRate = audioContext.sampleRate;
             const length = sampleRate * duration;
@@ -1136,9 +1097,7 @@
             return impulse;
         }
 
-        // Setup audio source (mic, noise, or combined) with polarity inversion
         async function setupSource() {
-            // Determine which sources need polarity inversion
             const invertMic = (polarityInversion === 'mic' || polarityInversion === 'both');
             const invertNoise = (polarityInversion === 'noise' || polarityInversion === 'both');
 
@@ -1153,7 +1112,6 @@
                     mediaStream = stream;
                     micNode = audioContext.createMediaStreamSource(stream);
 
-                    // Apply polarity inversion if needed
                     if (invertMic) {
                         const invertGain = audioContext.createGain();
                         invertGain.gain.value = -1;
@@ -1163,11 +1121,8 @@
                     return micNode;
                 });
             } else if (sourceType === 'noise') {
-                // For noise-only, we'll generate it in the script processor
-                // Return a silent source (we'll add noise in the processor)
                 return Promise.resolve(audioContext.createBufferSource());
             } else if (sourceType === 'combined') {
-                // For combined, we'll mix mic and noise in the script processor
                 return navigator.mediaDevices.getUserMedia({
                     audio: {
                         echoCancellation: false,
@@ -1178,7 +1133,6 @@
                     mediaStream = stream;
                     micNode = audioContext.createMediaStreamSource(stream);
 
-                    // Apply polarity inversion if needed
                     if (invertMic) {
                         const invertGain = audioContext.createGain();
                         invertGain.gain.value = -1;
@@ -1190,73 +1144,54 @@
             }
         }
 
-        // Audio processing
         function setupAudioProcessing() {
             const bufferSize = 4096;
             scriptNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
-
-            // Initialize noise generator state
             initNoiseGeneratorState();
 
             scriptNode.onaudioprocess = function(e) {
-                // Get current block samples (either from auto-loop or manual selection)
                 const currentBlockSamples = autoLoopEnabled ? getCurrentAutoLoopValue() : blockSamples;
                 const currentNoiseColor = getCurrentNoiseColor();
                 const inputData = e.inputBuffer.getChannelData(0);
                 const outputData = e.outputBuffer.getChannelData(0);
                 const bufferLength = outputData.length;
 
-                // Determine which sources need polarity inversion
                 const invertMic = (polarityInversion === 'mic' || polarityInversion === 'both');
                 const invertNoise = (polarityInversion === 'noise' || polarityInversion === 'both');
 
                 for (let i = 0; i < bufferLength; i++) {
                     sampleCounter++;
 
-                    // Generate noise sample if needed
                     let noiseSample = 0;
                     if (sourceType === 'noise' || sourceType === 'combined') {
                         noiseSample = generateNoiseSample(currentNoiseColor);
                         if (invertNoise) noiseSample *= -1;
                     }
 
-                    // Get mic sample if needed
                     let micSample = 0;
                     if (sourceType === 'mic' || sourceType === 'combined') {
                         micSample = inputData[i];
                         if (invertMic) micSample *= -1;
                     }
 
-                    // Mix sources
                     let inputSample = micSample;
                     if (sourceType === 'noise') {
                         inputSample = noiseSample;
                     } else if (sourceType === 'combined') {
-                        inputSample = micSample + (noiseSample * 0.5); // Noise at 50% volume
+                        inputSample = micSample + (noiseSample * 0.5);
                     }
 
-                    // Block processing
                     const positionInInterval = sampleCounter % currentBlockSamples;
                     const blockLength = Math.floor(currentBlockSamples * blockDuration);
                     const isInBlockZone = positionInInterval < blockLength;
 
-                    let shouldMute;
-                    if (invertBlocking) {
-                        shouldMute = !isInBlockZone;
-                    } else {
-                        shouldMute = isInBlockZone;
-                    }
+                    let shouldMute = invertBlocking ? !isInBlockZone : isInBlockZone;
 
-                    if (shouldMute) {
-                        outputData[i] = 0;
-                    } else {
-                        outputData[i] = inputSample;
-                    }
+                    outputData[i] = shouldMute ? 0 : inputSample;
                 }
             };
         }
 
-        // Setup spatial rotation
         function setupRotation() {
             if (!rotationEnabled) return null;
 
@@ -1270,36 +1205,106 @@
             pannerNode.coneOuterAngle = 0;
             pannerNode.coneOuterGain = 0;
 
-            // Start at front
             pannerNode.positionX.value = 0;
             pannerNode.positionY.value = 0;
             pannerNode.positionZ.value = 2;
 
             rotationStartTime = audioContext.currentTime;
-
             return pannerNode;
         }
 
-        // Update rotation position
         function updateRotation() {
             if (!rotationEnabled || !pannerNode || !isRunning) return;
 
             const elapsed = audioContext.currentTime - rotationStartTime;
             const angle = 2 * Math.PI * rotationRate * elapsed;
 
-            // Circular motion around listener head (radius = 2)
-            const x = Math.sin(angle) * 2; // Left-right
-            const z = Math.cos(angle) * 2; // Front-back
+            const x = Math.sin(angle) * 2;
+            const z = Math.cos(angle) * 2;
 
             pannerNode.positionX.setValueAtTime(x, audioContext.currentTime);
             pannerNode.positionZ.setValueAtTime(z, audioContext.currentTime);
 
-            // Update visual indicator
             const degrees = (angle * 180 / Math.PI) % 360;
             rotationDot.style.transform = `rotate(${degrees}deg)`;
         }
 
-        // Update auto-loop displays
+        // ========== UI UPDATES ==========
+        function updateAllUI() {
+            // Source buttons
+            document.querySelectorAll('.source-btn').forEach(btn => {
+                btn.classList.toggle('selected', btn.dataset.source === sourceType);
+            });
+
+            // Noise color controls visibility
+            noiseColorControls.style.display = (sourceType === 'noise' || sourceType === 'combined') ? 'block' : 'none';
+
+            if (sourceType === 'noise' || sourceType === 'combined') {
+                document.querySelectorAll('.noise-color-btn').forEach(btn => {
+                    btn.classList.toggle('selected', btn.dataset.color === noiseColor);
+                });
+                autoLoopNoiseColorsBtn.classList.toggle('active', autoLoopNoiseColors);
+                autoLoopNoiseControls.style.display = autoLoopNoiseColors ? 'block' : 'none';
+                noiseColorLoopTimeSlider.value = noiseColorLoopTime;
+                noiseColorLoopTimeValue.textContent = noiseColorLoopTime.toFixed(1) + 's';
+            } else {
+                autoLoopNoiseControls.style.display = 'none';
+            }
+
+            // Block samples buttons
+            document.querySelectorAll('.interval-btn').forEach(btn => {
+                btn.classList.toggle('selected', parseInt(btn.dataset.value) === blockSamples);
+            });
+
+            // Block duration slider
+            durationSlider.value = blockDuration * 100;
+            durationValue.textContent = Math.round(blockDuration * 100);
+
+            // Auto-loop controls
+            autoLoopBtn.classList.toggle('active', autoLoopEnabled);
+            autoLoopControls.style.display = autoLoopEnabled ? 'block' : 'none';
+            autoLoopMinSlider.value = autoLoopMin;
+            autoLoopMinValue.textContent = autoLoopMin;
+            autoLoopMaxSlider.value = autoLoopMax;
+            autoLoopMaxValue.textContent = autoLoopMax;
+            autoLoopTimeSlider.value = autoLoopTime;
+            autoLoopTimeValue.textContent = autoLoopTime.toFixed(1) + 's';
+
+            // Polarity inversion
+            polarityInversionSelect.value = polarityInversion;
+
+            // Block processing mode
+            invertBlockingBtn.classList.toggle('active', invertBlocking);
+            modeIndicator.textContent = invertBlocking ?
+                'Mode: Pass Samples (Chopped Bursts)' :
+                'Mode: Block Samples (Silence Gaps)';
+            modeIndicator.classList.toggle('inverted', invertBlocking);
+
+            // Rotation controls
+            rotationBtn.classList.toggle('active', rotationEnabled);
+            if (rotationEnabled) {
+                rateContainer.style.opacity = '1';
+                rateContainer.style.pointerEvents = 'auto';
+                rotationVisual.classList.add('active');
+                rotationDot.style.animation = `rotate ${1/rotationRate}s linear infinite`;
+            } else {
+                rateContainer.style.opacity = '0.5';
+                rateContainer.style.pointerEvents = 'none';
+                rotationVisual.classList.remove('active');
+                rotationDot.style.animation = 'none';
+            }
+            rateSlider.value = rotationRate;
+            rateValue.textContent = rotationRate.toFixed(1);
+
+            // Reverb
+            decaySlider.value = decayTime;
+            decayValue.textContent = decayTime.toFixed(1);
+
+            // Displays
+            updateAutoLoopDisplay();
+            updateNoiseColorDisplay();
+        }
+
         function updateAutoLoopDisplay() {
             if (!autoLoopEnabled) {
                 currentSamplesValue.textContent = `Current: ${blockSamples} samples`;
@@ -1317,7 +1322,7 @@
             autoLoopNoiseIndicator.classList.toggle('active', autoLoopNoiseColors);
         }
 
-        // Visualization
+        // ========== VISUALIZATION ==========
         function visualize() {
             if (!isRunning) return;
 
@@ -1335,7 +1340,7 @@
             canvasCtx.fillStyle = '#111';
             canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Create gradient ONCE with finite, fixed coordinates
+            // Create gradient with finite, fixed coordinates
             let gradient = canvasCtx.createLinearGradient(0, 0, 0, canvas.height);
 
             if (invertBlocking) {
@@ -1348,7 +1353,6 @@
                 gradient.addColorStop(0, '#3b82f6');
                 gradient.addColorStop(1, '#1d4ed8');
             } else {
-                // Default gradient based on polarity inversion
                 if (polarityInversion === 'none') {
                     gradient.addColorStop(0, '#667eea');
                     gradient.addColorStop(1, '#764ba2');
@@ -1405,15 +1409,13 @@
 
             for(let i = 0; i < bufferLength; i++) {
                 barHeight = dataArray[i] / 255 * canvas.height;
-
                 canvasCtx.fillStyle = gradient;
                 canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-
                 x += barWidth + 1;
             }
         }
 
-        // Start/Stop
+        // ========== AUDIO CONTROL ==========
         async function toggleAudio() {
             if (isRunning) {
                 stopAudio();
@@ -1447,7 +1449,6 @@
 
                 const panner = setupRotation();
 
-                // Chain: Source -> ScriptProcessor -> [Panner] -> Convolver -> Gain -> Analyser -> Destination
                 source.connect(scriptNode);
 
                 if (panner) {
@@ -1461,19 +1462,12 @@
                 gainNode.connect(analyser);
                 analyser.connect(audioContext.destination);
 
-                // Start noise source if needed (for noise-only mode, we generate in processor)
-                if (sourceType === 'noise') {
-                    // For noise-only, we don't need the source, but we need to start the processor
-                    // The processor will generate noise
-                }
-
                 isRunning = true;
                 toggleBtn.textContent = 'Stop Audio';
                 toggleBtn.classList.add('stop');
                 statusIndicator.classList.add('active');
                 warning.classList.remove('show');
 
-                // Set start times
                 autoLoopStartTime = audioContext.currentTime;
                 noiseColorStartTime = audioContext.currentTime;
 
@@ -1533,201 +1527,159 @@
             canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
         }
 
-        // Event listeners
-        toggleBtn.addEventListener('click', toggleAudio);
+        // ========== EVENT LISTENERS ==========
+        function setupEventListeners() {
+            toggleBtn.addEventListener('click', toggleAudio);
 
-        // Preset event listeners
-        presetSelect.addEventListener('change', (e) => {
-            const index = parseInt(e.target.value);
-            if (index >= 0) {
-                loadPreset(index);
-            }
-        });
-
-        savePresetBtn.addEventListener('click', () => {
-            saveCurrentPreset();
-        });
-
-        deletePresetBtn.addEventListener('click', () => {
-            const index = parseInt(presetSelect.value);
-            if (index >= 0 && index < presets.length) {
-                deletePreset(index);
-            } else {
-                alert("Please select a preset to delete.");
-            }
-        });
-
-        // Source selection
-        document.querySelectorAll('.source-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                if (isRunning) {
-                    stopAudio();
-                }
-                document.querySelectorAll('.source-btn').forEach(b => b.classList.remove('selected'));
-                e.target.classList.add('selected');
-                sourceType = e.target.dataset.source;
-
-                // Show/hide noise color controls
-                if (sourceType === 'noise' || sourceType === 'combined') {
-                    noiseColorControls.style.display = 'block';
-                } else {
-                    noiseColorControls.style.display = 'none';
-                    autoLoopNoiseControls.style.display = 'none';
-                }
-
-                // Update all UI
-                updateAllUI();
+            // Preset events
+            presetSelect.addEventListener('change', (e) => {
+                const index = parseInt(e.target.value);
+                if (index >= 0) loadPreset(index);
             });
-        });
+            savePresetBtn.addEventListener('click', saveCurrentPreset);
+            deletePresetBtn.addEventListener('click', () => {
+                const index = parseInt(presetSelect.value);
+                if (index >= 0 && index < presets.length) deletePreset(index);
+                else alert("Please select a preset to delete.");
+            });
 
-        // Noise color selection
-        document.querySelectorAll('.noise-color-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                document.querySelectorAll('.noise-color-btn').forEach(b => b.classList.remove('selected'));
-                e.target.classList.add('selected');
-                noiseColor = e.target.dataset.color;
+            // Source selection
+            document.querySelectorAll('.source-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    if (isRunning) stopAudio();
+                    document.querySelectorAll('.source-btn').forEach(b => b.classList.remove('selected'));
+                    e.target.classList.add('selected');
+                    sourceType = e.target.dataset.source;
+                    updateAllUI();
+                });
+            });
+
+            // Noise color selection
+            document.querySelectorAll('.noise-color-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.noise-color-btn').forEach(b => b.classList.remove('selected'));
+                    e.target.classList.add('selected');
+                    noiseColor = e.target.dataset.color;
+                    updateNoiseColorDisplay();
+                });
+            });
+
+            // Auto-loop noise colors
+            autoLoopNoiseColorsBtn.addEventListener('click', () => {
+                autoLoopNoiseColors = !autoLoopNoiseColors;
+                autoLoopNoiseColorsBtn.classList.toggle('active');
+                autoLoopNoiseControls.style.display = autoLoopNoiseColors ? 'block' : 'none';
                 updateNoiseColorDisplay();
             });
-        });
+            noiseColorLoopTimeSlider.addEventListener('input', (e) => {
+                noiseColorLoopTime = parseFloat(e.target.value);
+                noiseColorLoopTimeValue.textContent = noiseColorLoopTime.toFixed(1) + 's';
+            });
 
-        // Auto-loop noise colors toggle
-        autoLoopNoiseColorsBtn.addEventListener('click', () => {
-            autoLoopNoiseColors = !autoLoopNoiseColors;
-            autoLoopNoiseColorsBtn.classList.toggle('active');
-            autoLoopNoiseControls.style.display = autoLoopNoiseColors ? 'block' : 'none';
-            updateNoiseColorDisplay();
-        });
-
-        // Noise color loop time slider
-        noiseColorLoopTimeSlider.addEventListener('input', (e) => {
-            noiseColorLoopTime = parseFloat(e.target.value);
-            noiseColorLoopTimeValue.textContent = noiseColorLoopTime.toFixed(1) + 's';
-        });
-
-        // Polarity inversion selection
-        polarityInversionSelect.addEventListener('change', (e) => {
-            polarityInversion = e.target.value;
-            if (isRunning) {
-                // Restart audio to apply polarity changes
-                stopAudio();
-                setTimeout(() => startAudio(), 100);
-            }
-        });
-
-        document.querySelectorAll('.interval-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                document.querySelectorAll('.interval-btn').forEach(b => b.classList.remove('selected'));
-                e.target.classList.add('selected');
-                blockSamples = parseInt(e.target.dataset.value);
-                if (!autoLoopEnabled) {
-                    currentSamplesValue.textContent = `Current: ${blockSamples} samples`;
+            // Polarity inversion
+            polarityInversionSelect.addEventListener('change', (e) => {
+                polarityInversion = e.target.value;
+                if (isRunning) {
+                    stopAudio();
+                    setTimeout(() => startAudio(), 100);
                 }
+            });
+
+            // Block samples
+            document.querySelectorAll('.interval-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.interval-btn').forEach(b => b.classList.remove('selected'));
+                    e.target.classList.add('selected');
+                    blockSamples = parseInt(e.target.dataset.value);
+                    updateAllUI();
+                });
+            });
+
+            // Block duration
+            durationSlider.addEventListener('input', (e) => {
+                blockDuration = parseInt(e.target.value) / 100;
+                durationValue.textContent = e.target.value;
                 updateAllUI();
             });
-        });
 
-        durationSlider.addEventListener('input', (e) => {
-            blockDuration = parseInt(e.target.value) / 100;
-            durationValue.textContent = e.target.value;
-            updateAllUI();
-        });
+            // Invert blocking
+            invertBlockingBtn.addEventListener('click', () => {
+                invertBlocking = !invertBlocking;
+                updateAllUI();
+            });
 
-        decaySlider.addEventListener('input', (e) => {
-            decayTime = parseFloat(e.target.value);
-            if (isRunning && convolver) {
-                convolver.buffer = createImpulseResponse(decayTime);
-            }
-            updateAllUI();
-        });
-
-        invertBlockingBtn.addEventListener('click', () => {
-            invertBlocking = !invertBlocking;
-            invertBlockingBtn.classList.toggle('active');
-
-            if (invertBlocking) {
-                modeIndicator.textContent = 'Mode: Pass Samples (Chopped Bursts)';
-                modeIndicator.classList.add('inverted');
-            } else {
-                modeIndicator.textContent = 'Mode: Block Samples (Silence Gaps)';
-                modeIndicator.classList.remove('inverted');
-            }
-            updateAllUI();
-        });
-
-        // Auto-loop block samples controls
-        autoLoopBtn.addEventListener('click', () => {
-            autoLoopEnabled = !autoLoopEnabled;
-            autoLoopBtn.classList.toggle('active');
-            autoLoopControls.style.display = autoLoopEnabled ? 'block' : 'none';
-            updateAutoLoopDisplay();
-            updateAllUI();
-        });
-
-        autoLoopMinSlider.addEventListener('input', (e) => {
-            autoLoopMin = parseInt(e.target.value);
-            autoLoopMinValue.textContent = autoLoopMin;
-            if (autoLoopEnabled && isRunning) {
+            // Auto-loop block samples
+            autoLoopBtn.addEventListener('click', () => {
+                autoLoopEnabled = !autoLoopEnabled;
+                updateAllUI();
+            });
+            autoLoopMinSlider.addEventListener('input', (e) => {
+                autoLoopMin = parseInt(e.target.value);
+                autoLoopMinValue.textContent = autoLoopMin;
                 updateAutoLoopDisplay();
-            }
-            updateAllUI();
-        });
-
-        autoLoopMaxSlider.addEventListener('input', (e) => {
-            autoLoopMax = parseInt(e.target.value);
-            autoLoopMaxValue.textContent = autoLoopMax;
-            if (autoLoopEnabled && isRunning) {
+            });
+            autoLoopMaxSlider.addEventListener('input', (e) => {
+                autoLoopMax = parseInt(e.target.value);
+                autoLoopMaxValue.textContent = autoLoopMax;
                 updateAutoLoopDisplay();
+            });
+            autoLoopTimeSlider.addEventListener('input', (e) => {
+                autoLoopTime = parseFloat(e.target.value);
+                autoLoopTimeValue.textContent = autoLoopTime.toFixed(1) + 's';
+            });
+
+            // Rotation
+            rotationBtn.addEventListener('click', () => {
+                rotationEnabled = !rotationEnabled;
+                updateAllUI();
+                if (isRunning) {
+                    stopAudio();
+                    setTimeout(() => startAudio(), 100);
+                }
+            });
+            rateSlider.addEventListener('input', (e) => {
+                rotationRate = parseFloat(e.target.value);
+                rateValue.textContent = rotationRate.toFixed(1);
+                if (rotationEnabled && rotationDot) {
+                    rotationDot.style.animation = `rotate ${1/rotationRate}s linear infinite`;
+                }
+            });
+
+            // Reverb
+            decaySlider.addEventListener('input', (e) => {
+                decayTime = parseFloat(e.target.value);
+                decayValue.textContent = decayTime.toFixed(1);
+                if (isRunning && convolver) {
+                    convolver.buffer = createImpulseResponse(decayTime);
+                }
+            });
+        }
+
+        // ========== BACKGROUND HANDLING ==========
+        function handleVisibilityChange() {
+            if (document.visibilityState === 'visible') {
+                if (wasRunningBeforeBlur && !isRunning) {
+                    warning.classList.add('show');
+                    warning.textContent = 'Audio was paused in background. Click "Start Audio" to resume.';
+                }
+            } else if (document.visibilityState === 'hidden') {
+                wasRunningBeforeBlur = isRunning;
             }
-            updateAllUI();
-        });
+        }
 
-        autoLoopTimeSlider.addEventListener('input', (e) => {
-            autoLoopTime = parseFloat(e.target.value);
-            autoLoopTimeValue.textContent = autoLoopTime.toFixed(1) + 's';
-            updateAllUI();
-        });
+        function handlePageHide() {
+            wasRunningBeforeBlur = isRunning;
+        }
 
-        // Rotation controls
-        rotationBtn.addEventListener('click', () => {
-            rotationEnabled = !rotationEnabled;
-            rotationBtn.classList.toggle('active');
-
-            if (rotationEnabled) {
-                rateContainer.style.opacity = '1';
-                rateContainer.style.pointerEvents = 'auto';
-                rotationVisual.classList.add('active');
-                rotationDot.style.animation = `rotate ${1/rotationRate}s linear infinite`;
-            } else {
-                rateContainer.style.opacity = '0.5';
-                rateContainer.style.pointerEvents = 'none';
-                rotationVisual.classList.remove('active');
-                rotationDot.style.animation = 'none';
+        function handlePageShow() {
+            if (wasRunningBeforeBlur && !isRunning) {
+                warning.classList.add('show');
+                warning.textContent = 'Audio was paused. Click "Start Audio" to resume.';
             }
+        }
 
-            if (isRunning) {
-                // Restart to apply changes
-                stopAudio();
-                setTimeout(() => startAudio(), 100);
-            }
-            updateAllUI();
-        });
-
-        rateSlider.addEventListener('input', (e) => {
-            rotationRate = parseFloat(e.target.value);
-            rateValue.textContent = rotationRate.toFixed(1);
-            if (rotationEnabled && rotationDot) {
-                rotationDot.style.animation = `rotate ${1/rotationRate}s linear infinite`;
-            }
-            updateAllUI();
-        });
-
-        document.addEventListener('visibilitychange', () => {
-            // Handle tab switching if needed
-        });
-
-        // Initialize
-        loadPresets();
-        updateAllUI();
+        // ========== INITIALIZE ==========
+        init();
     </script>
 </body>
 </html>
