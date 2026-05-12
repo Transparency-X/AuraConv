@@ -118,7 +118,7 @@
             gap: 10px;
         }
 
-        .auto-loop-controls, .auto-loop-noise-controls, .preset-controls {
+        .auto-loop-controls, .auto-loop-noise-controls, .preset-controls, .volume-lfo-controls {
             display: grid;
             grid-template-columns: 1fr;
             gap: 15px;
@@ -395,7 +395,7 @@
             to { transform: rotate(360deg); }
         }
 
-        .auto-loop-indicator, .auto-loop-noise-indicator {
+        .auto-loop-indicator, .auto-loop-noise-indicator, .volume-lfo-indicator {
             display: flex;
             align-items: center;
             justify-content: center;
@@ -407,7 +407,7 @@
             border: 1px solid #1a3a2a;
         }
 
-        .auto-loop-indicator.active, .auto-loop-noise-indicator.active {
+        .auto-loop-indicator.active, .auto-loop-noise-indicator.active, .volume-lfo-indicator.active {
             background: rgba(16, 185, 129, 0.1);
             border-color: #10b981;
         }
@@ -425,7 +425,7 @@
             50% { opacity: 0.5; transform: scale(1.2); }
         }
 
-        .polarity-info, .block-info, .noise-info, .preset-info {
+        .polarity-info, .block-info, .noise-info, .preset-info, .volume-info {
             margin-top: 15px;
             padding: 12px;
             background: #0a0a0a;
@@ -433,7 +433,7 @@
             border: 1px solid #222;
         }
 
-        .polarity-info p, .block-info p, .noise-info p, .preset-info p {
+        .polarity-info p, .block-info p, .noise-info p, .preset-info p, .volume-info p {
             font-size: 0.8rem;
             color: #666;
             line-height: 1.4;
@@ -447,6 +447,30 @@
         .preset-info {
             border-color: #10b981;
             background: rgba(16, 185, 129, 0.05);
+        }
+
+        .volume-info {
+            border-color: #f59e0b;
+            background: rgba(245, 158, 11, 0.05);
+        }
+
+        /* Volume LFO visualizer */
+        .volume-meter {
+            width: 100%;
+            height: 8px;
+            background: #222;
+            border-radius: 4px;
+            margin-top: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .volume-meter-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #f59e0b, #fbbf24);
+            border-radius: 4px;
+            transition: width 0.1s linear;
+            width: 100%;
         }
 
         @media (max-width: 380px) {
@@ -505,7 +529,7 @@
                 </div>
             </div>
 
-            <!-- Noise Color Controls (shown when noise or combined is selected) -->
+            <!-- Noise Color Controls -->
             <div class="control-group" id="noiseColorControls" style="display: none;">
                 <label class="control-label">Noise Color</label>
                 <div class="noise-info">
@@ -535,6 +559,33 @@
                     <div class="auto-loop-noise-indicator" id="autoLoopNoiseIndicator">
                         <div class="pulse-dot"></div>
                         <span id="currentNoiseColor">Current: White Noise</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Volume LFO Controls -->
+            <div class="control-group">
+                <label class="control-label">Volume LFO</label>
+                <div class="volume-info">
+                    <p>Modulate output volume from 0% to 100% to 0% in a loop</p>
+                </div>
+                <button class="toggle-btn" id="volumeLfoBtn">
+                    Enable Volume LFO
+                </button>
+                <div class="volume-lfo-controls" id="volumeLfoControls" style="display: none;">
+                    <div class="slider-container">
+                        <div class="slider-row">
+                            <span class="slider-label">Loop Time (s):</span>
+                            <input type="range" id="volumeLfoTime" min="0.1" max="10" value="1" step="0.1">
+                            <span id="volumeLfoTimeValue">1.0s</span>
+                        </div>
+                    </div>
+                    <div class="volume-meter">
+                        <div class="volume-meter-fill" id="volumeMeterFill"></div>
+                    </div>
+                    <div class="volume-lfo-indicator" id="volumeLfoIndicator">
+                        <div class="pulse-dot"></div>
+                        <span id="currentVolumeValue">Current Volume: 100%</span>
                     </div>
                 </div>
             </div>
@@ -661,7 +712,7 @@
             <button class="primary" id="toggleBtn">Start Audio</button>
 
             <div class="info">
-                AuraConv processes audio with sample blocking, spatial rotation, and convolution reverb.<br>
+                AuraConv processes audio with sample blocking, volume modulation, spatial rotation, and convolution reverb.<br>
                 Best experienced with headphones.
             </div>
         </div>
@@ -694,6 +745,11 @@
         let noiseColorLoopTime = 2.0;
         let noiseColorStartTime = 0;
         const noiseColors = ['white', 'pink', 'brown', 'blue', 'purple', 'green', 'grey', 'black'];
+
+        // Volume LFO variables
+        let volumeLfoEnabled = false;
+        let volumeLfoTime = 1.0;
+        let volumeLfoStartTime = 0;
 
         // Noise generator state
         let noiseGeneratorState = {
@@ -737,7 +793,9 @@
                 polarityInversion: 'none',
                 rotationEnabled: false,
                 rotationRate: 0.5,
-                decayTime: 3
+                decayTime: 3,
+                volumeLfoEnabled: false,
+                volumeLfoTime: 1.0
             },
             {
                 name: "Phase-Swept Drone",
@@ -755,7 +813,9 @@
                 polarityInversion: 'both',
                 rotationEnabled: false,
                 rotationRate: 0.5,
-                decayTime: 3
+                decayTime: 3,
+                volumeLfoEnabled: false,
+                volumeLfoTime: 1.0
             },
             {
                 name: "Spatial Noise Cloud",
@@ -773,7 +833,29 @@
                 polarityInversion: 'none',
                 rotationEnabled: true,
                 rotationRate: 0.2,
-                decayTime: 8
+                decayTime: 8,
+                volumeLfoEnabled: false,
+                volumeLfoTime: 1.0
+            },
+            {
+                name: "Pulsing Volume",
+                sourceType: 'noise',
+                noiseColor: 'white',
+                autoLoopNoiseColors: false,
+                noiseColorLoopTime: 2,
+                blockSamples: 1000,
+                autoLoopEnabled: false,
+                autoLoopMin: 50,
+                autoLoopMax: 10000,
+                autoLoopTime: 2,
+                blockDuration: 0.5,
+                invertBlocking: false,
+                polarityInversion: 'none',
+                rotationEnabled: false,
+                rotationRate: 0.5,
+                decayTime: 3,
+                volumeLfoEnabled: true,
+                volumeLfoTime: 1.0
             },
             {
                 name: "Deep Sub-Bass Modulation",
@@ -791,25 +873,9 @@
                 polarityInversion: 'none',
                 rotationEnabled: false,
                 rotationRate: 0.5,
-                decayTime: 6
-            },
-            {
-                name: "Extreme Slow Motion",
-                sourceType: 'noise',
-                noiseColor: 'black',
-                autoLoopNoiseColors: true,
-                noiseColorLoopTime: 8,
-                blockSamples: 10000,
-                autoLoopEnabled: false,
-                autoLoopMin: 50,
-                autoLoopMax: 10000,
-                autoLoopTime: 2,
-                blockDuration: 0.7,
-                invertBlocking: false,
-                polarityInversion: 'none',
-                rotationEnabled: true,
-                rotationRate: 0.1,
-                decayTime: 10
+                decayTime: 6,
+                volumeLfoEnabled: false,
+                volumeLfoTime: 1.0
             }
         ];
 
@@ -846,6 +912,15 @@
         const autoLoopNoiseIndicator = document.getElementById('autoLoopNoiseIndicator');
         const currentNoiseColor = document.getElementById('currentNoiseColor');
 
+        // Volume LFO UI elements
+        const volumeLfoBtn = document.getElementById('volumeLfoBtn');
+        const volumeLfoControls = document.getElementById('volumeLfoControls');
+        const volumeLfoTimeSlider = document.getElementById('volumeLfoTime');
+        const volumeLfoTimeValue = document.getElementById('volumeLfoTimeValue');
+        const volumeLfoIndicator = document.getElementById('volumeLfoIndicator');
+        const currentVolumeValue = document.getElementById('currentVolumeValue');
+        const volumeMeterFill = document.getElementById('volumeMeterFill');
+
         // Polarity inversion UI
         const polarityInversionSelect = document.getElementById('polarityInversion');
 
@@ -869,7 +944,7 @@
             updateAllUI();
             setupEventListeners();
 
-            // Add background handling
+            // Background handling
             document.addEventListener('visibilitychange', handleVisibilityChange);
             window.addEventListener('pagehide', handlePageHide);
             window.addEventListener('pageshow', handlePageShow);
@@ -935,6 +1010,8 @@
             rotationEnabled = preset.rotationEnabled;
             rotationRate = preset.rotationRate;
             decayTime = preset.decayTime;
+            volumeLfoEnabled = preset.volumeLfoEnabled;
+            volumeLfoTime = preset.volumeLfoTime;
 
             updateAllUI();
 
@@ -963,7 +1040,9 @@
                 polarityInversion,
                 rotationEnabled,
                 rotationRate,
-                decayTime
+                decayTime,
+                volumeLfoEnabled,
+                volumeLfoTime
             };
 
             presets.push(newPreset);
@@ -1064,6 +1143,22 @@
                 default:
                     return Math.random() * 2 - 1;
             }
+        }
+
+        // ========== VOLUME LFO ==========
+        function getCurrentVolumeLfo() {
+            if (!volumeLfoEnabled) return 1.0;
+
+            const now = audioContext ? audioContext.currentTime : performance.now() / 1000;
+            const elapsed = now - volumeLfoStartTime;
+            const normalizedTime = (elapsed % volumeLfoTime) / volumeLfoTime;
+
+            // Triangle wave: 0 -> 1 -> 0
+            const triangleWave = normalizedTime < 0.5 ?
+                normalizedTime * 2 :
+                (1 - normalizedTime) * 2;
+
+            return triangleWave;
         }
 
         // ========== AUDIO PROCESSING ==========
@@ -1251,6 +1346,12 @@
                 autoLoopNoiseControls.style.display = 'none';
             }
 
+            // Volume LFO controls
+            volumeLfoBtn.classList.toggle('active', volumeLfoEnabled);
+            volumeLfoControls.style.display = volumeLfoEnabled ? 'block' : 'none';
+            volumeLfoTimeSlider.value = volumeLfoTime;
+            volumeLfoTimeValue.textContent = volumeLfoTime.toFixed(1) + 's';
+
             // Block samples buttons
             document.querySelectorAll('.interval-btn').forEach(btn => {
                 btn.classList.toggle('selected', parseInt(btn.dataset.value) === blockSamples);
@@ -1303,6 +1404,7 @@
             // Displays
             updateAutoLoopDisplay();
             updateNoiseColorDisplay();
+            updateVolumeLfoDisplay();
         }
 
         function updateAutoLoopDisplay() {
@@ -1322,6 +1424,20 @@
             autoLoopNoiseIndicator.classList.toggle('active', autoLoopNoiseColors);
         }
 
+        function updateVolumeLfoDisplay() {
+            if (!volumeLfoEnabled) {
+                currentVolumeValue.textContent = `Current Volume: 100%`;
+                volumeMeterFill.style.width = '100%';
+                volumeLfoIndicator.classList.remove('active');
+            } else {
+                const currentVolume = getCurrentVolumeLfo();
+                const percent = Math.round(currentVolume * 100);
+                currentVolumeValue.textContent = `Current Volume: ${percent}%`;
+                volumeMeterFill.style.width = `${percent}%`;
+                volumeLfoIndicator.classList.add('active');
+            }
+        }
+
         // ========== VISUALIZATION ==========
         function visualize() {
             if (!isRunning) return;
@@ -1330,6 +1446,12 @@
             updateRotation();
             updateAutoLoopDisplay();
             updateNoiseColorDisplay();
+            updateVolumeLfoDisplay();
+
+            // Update volume LFO on gain node
+            if (gainNode) {
+                gainNode.gain.value = volumeLfoEnabled ? getCurrentVolumeLfo() : 1.0;
+            }
 
             if (!analyser) return;
 
@@ -1352,6 +1474,9 @@
             } else if (autoLoopEnabled) {
                 gradient.addColorStop(0, '#3b82f6');
                 gradient.addColorStop(1, '#1d4ed8');
+            } else if (volumeLfoEnabled) {
+                gradient.addColorStop(0, '#f59e0b');
+                gradient.addColorStop(1, '#fbbf24');
             } else {
                 if (polarityInversion === 'none') {
                     gradient.addColorStop(0, '#667eea');
@@ -1440,7 +1565,7 @@
                 convolver.buffer = createImpulseResponse(decayTime);
 
                 gainNode = audioContext.createGain();
-                gainNode.gain.value = 0.8;
+                gainNode.gain.value = 1.0; // Start at full volume
 
                 analyser = audioContext.createAnalyser();
                 analyser.fftSize = 256;
@@ -1468,8 +1593,10 @@
                 statusIndicator.classList.add('active');
                 warning.classList.remove('show');
 
+                // Set start times
                 autoLoopStartTime = audioContext.currentTime;
                 noiseColorStartTime = audioContext.currentTime;
+                volumeLfoStartTime = audioContext.currentTime;
 
                 visualize();
 
@@ -1574,6 +1701,16 @@
             noiseColorLoopTimeSlider.addEventListener('input', (e) => {
                 noiseColorLoopTime = parseFloat(e.target.value);
                 noiseColorLoopTimeValue.textContent = noiseColorLoopTime.toFixed(1) + 's';
+            });
+
+            // Volume LFO
+            volumeLfoBtn.addEventListener('click', () => {
+                volumeLfoEnabled = !volumeLfoEnabled;
+                updateAllUI();
+            });
+            volumeLfoTimeSlider.addEventListener('input', (e) => {
+                volumeLfoTime = parseFloat(e.target.value);
+                volumeLfoTimeValue.textContent = volumeLfoTime.toFixed(1) + 's';
             });
 
             // Polarity inversion
