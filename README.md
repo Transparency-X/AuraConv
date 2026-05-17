@@ -1,6 +1,7 @@
 # **AuraConv: Real-Time Convolution Filter with Dynamic Sample Processing** 🎵
 
-![AuraConv Logo](https://img.icons8.com/ios/50/000000/waves.png)
+auraconv-blocky.pages.dev
+
 *Real-time audio convolution and sample manipulation in your browser*
 
 ---
