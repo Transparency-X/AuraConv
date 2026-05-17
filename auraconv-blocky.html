@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AuraConv Filter - Spectrogram</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        h1 { color: #00ff88; margin-bottom: 5px; }
+        .subtitle { color: #888; margin-bottom: 20px; }
+        
+        .controls {
+            background: #141414;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 500px;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #aaa;
+            font-size: 14px;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: #333;
+            border-radius: 3px;
+            outline: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #00ff88;
+            cursor: pointer;
+        }
+        
+        .value-display {
+            font-family: 'Courier New', monospace;
+            color: #00ff88;
+            font-size: 12px;
+            margin-top: 3px;
+        }
+        
+        .audio-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            flex: 1;
+            min-width: 100px;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: #00ff88;
+            color: #000;
+        }
+        .btn-primary:hover { background: #00cc6a; }
+        .btn-primary:active { transform: scale(0.98); }
+        
+        .btn-secondary {
+            background: #333;
+            color: #fff;
+        }
+        .btn-secondary:hover { background: #444; }
+        .btn-secondary:active { transform: scale(0.98); }
+        
+        .btn-danger {
+            background: #ff4444;
+            color: #fff;
+        }
+        .btn-danger:hover { background: #cc3333; }
+        
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #00ff88;
+        }
+        
+        .spectrogram-container {
+            background: #111;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 800px;
+        }
+        
+        #spectrogram {
+            width: 100%;
+            height: 400px;
+            display: block;
+        }
+        
+        .status {
+            margin-top: 10px;
+            color: #00ff88;
+            font-size: 12px;
+        }
+        
+        .status.error { color: #ff4444; }
+        
+        @media (max-width: 600px) {
+            .audio-controls { flex-direction: column; }
+            button { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <h1>AuraConv Filter</h1>
+    <p class="subtitle">Blocky Convolution with Real-time Spectrogram</p>
+    
+    <div class="controls">
+        <div class="audio-controls">
+            <button id="startBtn" class="btn-primary">Start Audio</button>
+            <button id="stopBtn" class="btn-danger" disabled>Stop Audio</button>
+        </div>
+        
+        <div class="checkbox-group">
+            <input type="checkbox" id="micCheck" checked>
+            <label for="micCheck">Microphone Input</label>
+        </div>
+        
+        <div class="checkbox-group">
+            <input type="checkbox" id="noiseCheck" checked>
+            <label for="noiseCheck">White Noise</label>
+        </div>
+        
+        <div class="checkbox-group">
+            <input type="checkbox" id="invertCheck">
+            <label for="invertCheck">Invert Polarity</label>
+        </div>
+        
+        <div class="control-group">
+            <label for="filterLength">Filter Length (Taps)</label>
+            <input type="range" id="filterLength" min="1" max="500" value="100" step="1">
+            <div class="value-display">100</div>
+        </div>
+        
+        <div class="control-group">
+            <label for="outputGain">Output Gain</label>
+            <input type="range" id="outputGain" min="0" max="1" value="0.15" step="0.01">
+            <div class="value-display">0.15</div>
+        </div>
+        
+        <div class="control-group">
+            <label for="blockWidth">Block Width (Samples)</label>
+            <input type="range" id="blockWidth" min="1" max="100" value="10" step="1">
+            <div class="value-display">10</div>
+        </div>
+        
+        <div id="status" class="status">Ready to start</div>
+    </div>
+    
+    <div class="spectrogram-container">
+        <canvas id="spectrogram"></canvas>
+    </div>
+
+    <script>
+        // ============================================
+        // AuraConv Filter Implementation
+        // ============================================
+        class AuraConvFilter {
+            constructor(audioContext, options = {}) {
+                this.audioContext = audioContext;
+                this.size = options.size || 100;
+                this.gain = options.gain || 0.15;
+                this.block_size = options.blockSize || 10;
+                
+                this.buf_pos = 0;
+                this.sum = 0;
+                this.block_counter = 0;
+                this.current_output = 0;
+                this.mem_start = new Float32Array(this.size).fill(0);
+                
+                // Create script processor node
+                this.bufferSize = 4096;
+                this.node = this.audioContext.createScriptProcessor(
+                    this.bufferSize, 
+                    2, 
+                    2
+                );
+                
+                this.node.onaudioprocess = (e) => this.processAudio(e);
+            }
+            
+            processAudio(e) {
+                const inputL = e.inputBuffer.getChannelData(0);
+                const inputR = e.inputBuffer.getChannelData(1);
+                const outputL = e.outputBuffer.getChannelData(0);
+                const outputR = e.outputBuffer.getChannelData(1);
+                
+                for (let i = 0; i < this.bufferSize; i++) {
+                    // Mono input (average of both channels)
+                    const input = (inputL[i] + inputR[i]) * 0.5;
+                    
+                    // Update running sum
+                    this.sum -= this.mem_start[this.buf_pos];
+                    this.mem_start[this.buf_pos] = input;
+                    this.sum += input;
+                    this.buf_pos += 1;
+                    if (this.buf_pos >= this.size) this.buf_pos = 0;
+                    
+                    // Block processing
+                    this.block_counter += 1;
+                    if (this.block_counter >= this.block_size) {
+                        this.block_counter = 0;
+                        this.current_output = (this.sum / this.size) * this.gain;
+                    }
+                    
+                    // Output to both channels
+                    outputL[i] = this.current_output;
+                    outputR[i] = this.current_output;
+                }
+            }
+            
+            updateParams(params) {
+                if (params.size !== undefined && params.size !== this.size) {
+                    this.size = params.size;
+                    const newMem = new Float32Array(this.size).fill(0);
+                    // Copy existing values
+                    for (let i = 0; i < Math.min(this.mem_start.length, this.size); i++) {
+                        newMem[i] = this.mem_start[i];
+                    }
+                    this.mem_start = newMem;
+                }
+                if (params.gain !== undefined) this.gain = params.gain;
+                if (params.blockSize !== undefined) this.block_size = params.blockSize;
+            }
+            
+            connect(destination) {
+                this.node.connect(destination);
+            }
+            
+            disconnect() {
+                this.node.disconnect();
+            }
+        }
+        
+        // ============================================
+        // White Noise Generator
+        // ============================================
+        class WhiteNoiseGenerator {
+            constructor(audioContext) {
+                this.audioContext = audioContext;
+                this.node = null;
+                this.gainNode = audioContext.createGain();
+                this.gainNode.gain.value = 0;
+            }
+            
+            start() {
+                if (this.node) return;
+                
+                const bufferSize = 2048;
+                const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+                const data = buffer.getChannelData(0);
+                
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+                
+                this.node = this.audioContext.createBufferSource();
+                this.node.buffer = buffer;
+                this.node.loop = true;
+                this.node.connect(this.gainNode);
+                this.node.start();
+            }
+            
+            stop() {
+                if (this.node) {
+                    this.node.stop();
+                    this.node = null;
+                }
+            }
+            
+            setVolume(volume) {
+                this.gainNode.gain.value = volume;
+            }
+            
+            connect(destination) {
+                this.gainNode.connect(destination);
+            }
+            
+            disconnect() {
+                this.gainNode.disconnect();
+            }
+        }
+        
+        // ============================================
+        // Spectrogram Visualizer
+        // ============================================
+        class SpectrogramVisualizer {
+            constructor(canvas, audioContext) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.audioContext = audioContext;
+                
+                this.analyser = audioContext.createAnalyser();
+                this.analyser.fftSize = 2048;
+                this.analyser.smoothingTimeConstant = 0.8;
+                
+                this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+                this.history = [];
+                this.maxHistory = 256;
+                
+                this.colors = [
+                    '#000000', '#111122', '#222244', '#333366', 
+                    '#444488', '#5555aa', '#6666cc', '#7777ee', 
+                    '#8888ff', '#9999ff', '#aaaaff', '#bbbbff', 
+                    '#ccccff', '#ddddff', '#eeeeff', '#ffffff'
+                ];
+                
+                this.resize();
+                window.addEventListener('resize', () => this.resize());
+            }
+            
+            resize() {
+                const container = this.canvas.parentElement;
+                this.canvas.width = container.clientWidth;
+                this.canvas.height = container.clientHeight;
+            }
+            
+            connect(source) {
+                source.connect(this.analyser);
+            }
+            
+            disconnect() {
+                this.analyser.disconnect();
+            }
+            
+            update() {
+                this.analyser.getByteFrequencyData(this.dataArray);
+                
+                // Store current spectrum
+                const current = new Float32Array(this.dataArray.length);
+                for (let i = 0; i < this.dataArray.length; i++) {
+                    current[i] = this.dataArray[i] / 255;
+                }
+                
+                this.history.push(current);
+                if (this.history.length > this.maxHistory) {
+                    this.history.shift();
+                }
+                
+                this.draw();
+            }
+            
+            draw() {
+                const { width, height } = this.canvas;
+                const { ctx } = this;
+                
+                // Clear canvas
+                ctx.fillStyle = '#111';
+                ctx.fillRect(0, 0, width, height);
+                
+                if (this.history.length === 0) return;
+                
+                const barWidth = width / this.dataArray.length;
+                
+                // Draw spectrogram (scrolling)
+                const historyHeight = height * 0.8;
+                const barHeight = historyHeight / this.maxHistory;
+                
+                for (let h = 0; h < this.history.length; h++) {
+                    const spectrum = this.history[h];
+                    const y = height - (h * barHeight) - barHeight;
+                    
+                    for (let i = 0; i < spectrum.length; i++) {
+                        const value = spectrum[i];
+                        const colorIndex = Math.floor(value * (this.colors.length - 1));
+                        ctx.fillStyle = this.colors[colorIndex];
+                        ctx.fillRect(i * barWidth, y, barWidth, barHeight);
+                    }
+                }
+                
+                // Draw current frequency bars on top
+                for (let i = 0; i < this.dataArray.length; i++) {
+                    const value = this.dataArray[i] / 255;
+                    const barHeight = value * (height * 0.2);
+                    const colorIndex = Math.floor(value * (this.colors.length - 1));
+                    ctx.fillStyle = this.colors[colorIndex];
+                    ctx.fillRect(i * barWidth, height - barHeight, barWidth, barHeight);
+                }
+            }
+        }
+        
+        // ============================================
+        // Main Application
+        // ============================================
+        class AuraConvApp {
+            constructor() {
+                this.audioContext = null;
+                this.auraConvFilter = null;
+                this.whiteNoiseGen = null;
+                this.spectrogram = null;
+                this.micSource = null;
+                this.masterGain = null;
+                this.invertNode = null;
+                this.animationId = null;
+                this.isRunning = false;
+                
+                // UI Elements
+                this.startBtn = document.getElementById('startBtn');
+                this.stopBtn = document.getElementById('stopBtn');
+                this.micCheck = document.getElementById('micCheck');
+                this.noiseCheck = document.getElementById('noiseCheck');
+                this.invertCheck = document.getElementById('invertCheck');
+                this.filterLength = document.getElementById('filterLength');
+                this.outputGain = document.getElementById('outputGain');
+                this.blockWidth = document.getElementById('blockWidth');
+                this.statusEl = document.getElementById('status');
+                this.spectrogramCanvas = document.getElementById('spectrogram');
+                
+                // Value displays
+                this.valueDisplays = {
+                    filterLength: document.querySelector('#filterLength + .value-display'),
+                    outputGain: document.querySelector('#outputGain + .value-display'),
+                    blockWidth: document.querySelector('#blockWidth + .value-display')
+                };
+                
+                this.setupEventListeners();
+            }
+            
+            setupEventListeners() {
+                this.startBtn.addEventListener('click', () => this.start());
+                this.stopBtn.addEventListener('click', () => this.stop());
+                
+                [this.filterLength, this.outputGain, this.blockWidth].forEach(slider => {
+                    slider.addEventListener('input', () => this.updateValueDisplay(slider));
+                });
+            }
+            
+            updateValueDisplay(slider) {
+                const display = this.valueDisplays[slider.id];
+                if (display) {
+                    display.textContent = slider.value;
+                }
+                
+                if (this.isRunning && this.auraConvFilter) {
+                    this.updateFilterParams();
+                }
+            }
+            
+            async start() {
+                if (this.isRunning) return;
+                
+                try {
+                    // Create audio context
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // Create master gain
+                    this.masterGain = this.audioContext.createGain();
+                    this.masterGain.gain.value = 0.7;
+                    this.masterGain.connect(this.audioContext.destination);
+                    
+                    // Create invert node
+                    this.invertNode = this.audioContext.createGain();
+                    this.invertNode.gain.value = this.invertCheck.checked ? -1 : 1;
+                    this.invertNode.connect(this.masterGain);
+                    
+                    // Create AuraConv filter
+                    this.auraConvFilter = new AuraConvFilter(this.audioContext, {
+                        size: parseInt(this.filterLength.value),
+                        gain: parseFloat(this.outputGain.value),
+                        blockSize: parseInt(this.blockWidth.value)
+                    });
+                    this.auraConvFilter.connect(this.invertNode);
+                    
+                    // Create white noise generator
+                    this.whiteNoiseGen = new WhiteNoiseGenerator(this.audioContext);
+                    this.whiteNoiseGen.setVolume(this.noiseCheck.checked ? 0.3 : 0);
+                    this.whiteNoiseGen.connect(this.auraConvFilter.node);
+                    
+                    // Setup spectrogram
+                    this.spectrogram = new SpectrogramVisualizer(
+                        this.spectrogramCanvas, 
+                        this.audioContext
+                    );
+                    this.spectrogram.connect(this.invertNode);
+                    
+                    // Setup mic if enabled
+                    if (this.micCheck.checked) {
+                        await this.setupMicrophone();
+                    }
+                    
+                    // Start noise if enabled
+                    if (this.noiseCheck.checked) {
+                        this.whiteNoiseGen.start();
+                    }
+                    
+                    // Start visualization loop
+                    this.startVisualization();
+                    
+                    this.isRunning = true;
+                    this.startBtn.disabled = true;
+                    this.stopBtn.disabled = false;
+                    this.statusEl.textContent = 'Running...';
+                    this.statusEl.className = 'status';
+                    
+                } catch (error) {
+                    console.error('Error starting audio:', error);
+                    this.statusEl.textContent = `Error: ${error.message}`;
+                    this.statusEl.className = 'status error';
+                }
+            }
+            
+            async setupMicrophone() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: true, 
+                        video: false 
+                    });
+                    this.micSource = this.audioContext.createMediaStreamSource(stream);
+                    this.micSource.connect(this.auraConvFilter.node);
+                    this.statusEl.textContent = 'Microphone access granted';
+                } catch (error) {
+                    console.error('Error accessing microphone:', error);
+                    this.statusEl.textContent = `Mic error: ${error.message}`;
+                    this.statusEl.className = 'status error';
+                }
+            }
+            
+            stop() {
+                if (!this.isRunning) return;
+                
+                // Stop visualization
+                if (this.animationId) {
+                    cancelAnimationFrame(this.animationId);
+                    this.animationId = null;
+                }
+                
+                // Stop white noise
+                if (this.whiteNoiseGen) {
+                    this.whiteNoiseGen.stop();
+                    this.whiteNoiseGen.disconnect();
+                }
+                
+                // Stop mic
+                if (this.micSource) {
+                    this.micSource.mediaStream.getTracks().forEach(track => track.stop());
+                    this.micSource.disconnect();
+                }
+                
+                // Disconnect filter
+                if (this.auraConvFilter) {
+                    this.auraConvFilter.disconnect();
+                }
+                
+                // Disconnect spectrogram
+                if (this.spectrogram) {
+                    this.spectrogram.disconnect();
+                }
+                
+                // Close audio context
+                if (this.audioContext) {
+                    this.audioContext.close();
+                }
+                
+                this.isRunning = false;
+                this.startBtn.disabled = false;
+                this.stopBtn.disabled = true;
+                this.statusEl.textContent = 'Stopped';
+                this.statusEl.className = 'status';
+            }
+            
+            startVisualization() {
+                const draw = () => {
+                    if (this.isRunning && this.spectrogram) {
+                        this.spectrogram.update();
+                    }
+                    this.animationId = requestAnimationFrame(draw);
+                };
+                this.animationId = requestAnimationFrame(draw);
+            }
+            
+            updateFilterParams() {
+                if (this.auraConvFilter) {
+                    this.auraConvFilter.updateParams({
+                        size: parseInt(this.filterLength.value),
+                        gain: parseFloat(this.outputGain.value),
+                        blockSize: parseInt(this.blockWidth.value)
+                    });
+                }
+            }
+        }
+        
+        // Initialize app when DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            new AuraConvApp();
+        });
+    </script>
+</body>
+</html>
