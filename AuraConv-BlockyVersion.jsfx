@@ -1,0 +1,36 @@
+desc: AuraConv Filter (Blocky Version)
+
+slider1:100<1,500,1>Filter Length (Taps)
+slider2:0.15<0,1,0.01>Output Gain
+slider3:10<1,100,1>Block Width (Samples)  // NEW: Controls gap width
+
+@init
+buf_pos = 0;
+mem_start = 0;
+sum = 0;
+block_counter = 0;        // NEW
+current_output = 0;       // NEW: Hold the value
+
+@slider
+size = slider1;
+gain = slider2;
+block_size = slider3;     // NEW
+
+@sample
+input = (spl0 + spl1) * 0.5;
+
+// Update running sum every sample (standard)
+sum -= mem_start[buf_pos];
+mem_start[buf_pos] = input;
+sum += input;
+buf_pos += 1;
+(buf_pos >= size) ? buf_pos = 0;
+
+// NEW: Only update output every 'block_size' samples
+block_counter += 1;
+(block_counter >= block_size) ? (
+  block_counter = 0;
+  current_output = (sum / size) * gain;
+);
+
+spl0 = spl1 = current_output;
